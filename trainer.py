@@ -580,6 +580,8 @@ class GameMemory:
                 "skills": skills,
                 "spec_exp": spec_exp,
                 "spec_used": spec_used,
+                "total_points": int(sum(spec_exp)),
+                "total_used": int(sum(spec_used)),
                 "specs": specs_by_role,
                 "traits_mask": traits_mask,
                 "goods": goods,
@@ -673,6 +675,39 @@ class GameMemory:
         for r in range(min(ecount, 5)):
             current = self.read_float(exp_arr + 0x20 + r * 4)
             self.write_float(exp_arr + 0x20 + r * 4, current + delta)
+        return True
+
+    def set_employee_spec_used(self, emp_ptr: int, role_idx: int, value: int) -> bool:
+        if not emp_ptr or role_idx < 0 or role_idx >= 5:
+            return False
+        used_arr = self.read_ptr(emp_ptr + 0x28)
+        if not used_arr:
+            return False
+        ucount = self.read_u32(used_arr + 0x18)
+        if role_idx >= ucount:
+            return False
+        return self.write_u32(used_arr + 0x20 + role_idx * 4, max(0, int(value)))
+
+    def set_all_employee_spec_points(self, emp_ptr: int, points: float) -> bool:
+        if not emp_ptr:
+            return False
+        exp_arr = self.read_ptr(emp_ptr + 0x20)
+        if not exp_arr:
+            return False
+        ecount = self.read_u32(exp_arr + 0x18)
+        for r in range(min(ecount, 5)):
+            self.write_float(exp_arr + 0x20 + r * 4, max(0.0, float(points)))
+        return True
+
+    def reset_employee_spec_used(self, emp_ptr: int) -> bool:
+        if not emp_ptr:
+            return False
+        used_arr = self.read_ptr(emp_ptr + 0x28)
+        if not used_arr:
+            return False
+        ucount = self.read_u32(used_arr + 0x18)
+        for r in range(min(ucount, 5)):
+            self.write_u32(used_arr + 0x20 + r * 4, 0)
         return True
 
     def set_employee_spec_level(self, emp_ptr: int, role_idx: int, spec_key: str, target_level: int) -> bool:
@@ -818,7 +853,9 @@ def run_cli(args):
         print("  --max-founder             Max out Founder vitals, skills, specs & clear weaknesses")
         print("  --max-employees           Max out all employees' needs and base skills to 100%")
         print("  --max-specs               Elevate all employee specializations to 3 stars")
-        print("  --add-spec-exp <points>   Grant specialization points (EXP) across all roles")
+        print("  --add-spec-exp <points>   Grant specialization points across all roles")
+        print("  --set-spec-points <pts>   Set exact specialization points across all roles")
+        print("  --reset-spec-used         Reset spent specialization points (refund capacity)")
         print("  --remove-weaknesses       Cure/remove all 8 negative traits from all personnel")
         print("  --free-salaries           Set all personnel salaries to $0 (free labor)")
         print("  --unlock-furniture        Unlock all locked furniture and equipment")
@@ -894,8 +931,19 @@ def run_cli(args):
         elif cmd == "--add-spec-exp" and i + 1 < len(args):
             delta = float(args[i+1])
             n = game.add_all_employees_spec_exp(delta)
-            print(f"[SUCCESS] Added +{delta:.1f} Specialization EXP across all roles for {n} employees!")
+            print(f"[SUCCESS] Added +{delta:.1f} Specialization Points across all roles for {n} employees!")
             i += 2
+        elif cmd == "--set-spec-points" and i + 1 < len(args):
+            pts = float(args[i+1])
+            emps = game.get_employees()
+            count = sum(1 for e in emps if game.set_all_employee_spec_points(e["emp_ptr"], pts))
+            print(f"[SUCCESS] Set specialization points to {pts:.1f} across all roles for {count} employees!")
+            i += 2
+        elif cmd == "--reset-spec-used":
+            emps = game.get_employees()
+            count = sum(1 for e in emps if game.reset_employee_spec_used(e["emp_ptr"]))
+            print(f"[SUCCESS] Reset spent specialization points (refunded capacity) for {count} employees!")
+            i += 1
         elif cmd == "--remove-weaknesses":
             rem = game.remove_all_personnel_weaknesses()
             print(f"[SUCCESS] Removed {rem} weaknesses across all company personnel!")
@@ -915,7 +963,7 @@ def run_cli(args):
                 for m in members:
                     tag = " [FOUNDER]" if m["founder"] else ""
                     w_tag = f" | Weaknesses: {', '.join(m['weaknesses'])}" if m['weaknesses'] else ""
-                    print(f"  - {m['name']}{tag}: Salary ${m['salary']:,.0f} | Energy {m['energy']*100:.0f}% | Stress {m['stress']*100:.0f}%{w_tag}")
+                    print(f"  - {m['name']}{tag}: Salary ${m['salary']:,.0f} | Energy {m['energy']*100:.0f}% | Stress {m['stress']*100:.0f}% | Points: {m['total_points']}{w_tag}")
             i += 1
         elif cmd == "--speed" and i + 1 < len(args):
             spd = float(args[i+1])
@@ -1387,6 +1435,9 @@ def run_gui():
     ctk.CTkButton(row_batch, text="Elevate All Specs (3★)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=lambda: (game.max_all_employees_specs(3), show_infobar("Elevated specializations to Level 3 for all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_batch, text="+10 Points to All", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.add_all_employees_spec_exp(10.0), show_infobar("Added +10 specialization points across all roles for all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
     ctk.CTkButton(row_batch, text="Remove All Weaknesses", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=lambda: (show_infobar(f"Removed {game.remove_all_personnel_weaknesses()} weaknesses across company personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
@@ -1417,7 +1468,7 @@ def run_gui():
     lbl_insp_team.pack(anchor="w", padx=14, pady=(0, 6))
 
     # Subtab Segmented Switcher inside Inspector
-    subtab_bar = ctk.CTkSegmentedButton(frame_inspector, values=["Overview", "Needs", "Skills & EXP", "Specializations", "Traits"],
+    subtab_bar = ctk.CTkSegmentedButton(frame_inspector, values=["Overview", "Needs", "Skills & Points", "Specializations", "Traits"],
                                         height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"))
     subtab_bar.pack(fill="x", padx=12, pady=(0, 8))
     subtab_bar.set("Overview")
@@ -1432,7 +1483,7 @@ def run_gui():
     }
 
     def switch_insp_subtab(tab_name: str):
-        insp_subtab[0] = tab_name.lower().replace(" & exp", "")
+        insp_subtab[0] = tab_name.lower().replace(" & points", "").replace(" & exp", "")
         for k, v in insp_views.items():
             if k == insp_subtab[0]:
                 v.pack(fill="both", expand=True, padx=8, pady=(0, 6))
@@ -1453,6 +1504,90 @@ def run_gui():
     card_widgets = {}
     spec_btn_cache = {}
     trait_sw_cache = {}
+    exp_labels = {}
+    exp_entries = {}
+    lbl_ov_pts_summary = None
+    lbl_ov_pts_breakdown = None
+    lbl_sp_avail_pts = None
+
+    def update_points_display_in_inspector(e: dict):
+        if not e:
+            return
+        tot_pts = int(sum(e.get("spec_exp", [])))
+        tot_used = int(sum(e.get("spec_used", [])))
+        e["total_points"] = tot_pts
+        e["total_used"] = tot_used
+
+        # Inspector Header
+        lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${e['salary']:,.0f}/mo | {tot_pts} Pts Available")
+
+        # Overview Points card
+        if lbl_ov_pts_summary:
+            lbl_ov_pts_summary.configure(text=f"Available: {tot_pts} Pts | Allocated: {tot_used}")
+        if lbl_ov_pts_breakdown:
+            roles_str = "  ".join(f"{GameMemory.ROLE_NAMES[i][:4]}: {e['spec_exp'][i]:.0f}" for i in range(min(5, len(e.get('spec_exp', [])))))
+            lbl_ov_pts_breakdown.configure(text=roles_str)
+
+        # Tab 3: Skills & Points
+        for r_idx, lbl in exp_labels.items():
+            val = e["spec_exp"][r_idx] if r_idx < len(e["spec_exp"]) else 0.0
+            used = e["spec_used"][r_idx] if r_idx < len(e["spec_used"]) else 0
+            lbl.configure(text=f"Unspent: {val:.1f} pts  |  Allocated: {used}")
+            if r_idx in exp_entries:
+                try:
+                    if frame_inspector.focus_get() != exp_entries[r_idx]:
+                        exp_entries[r_idx].delete(0, "end")
+                        exp_entries[r_idx].insert(0, f"{val:.0f}")
+                except Exception:
+                    pass
+
+        # Tab 4: Specializations
+        if lbl_sp_avail_pts:
+            lbl_sp_avail_pts.configure(text=f"Available Points to Spend: {tot_pts}  (Allocated: {tot_used})")
+
+        # Update Roster Card vitals
+        if e["actor_ptr"] in card_widgets:
+            w_count = len(e["weaknesses"])
+            w_text = f" | {w_count} Weak" if w_count > 0 else ""
+            w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+            pts_text = f" | {tot_pts} Pts" if tot_pts > 0 else ""
+            card_widgets[e["actor_ptr"]]["vitals"].configure(
+                text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}{w_text}{pts_text}",
+                text_color=w_col
+            )
+
+    def on_ov_add_pts(delta: float):
+        e = current_selected_emp[0]
+        if not e:
+            show_infobar("Select an employee first", is_success=False)
+            return
+        game.add_employee_spec_exp(e["emp_ptr"], delta)
+        for i in range(len(e["spec_exp"])):
+            e["spec_exp"][i] += delta
+        update_points_display_in_inspector(e)
+        show_infobar(f"Added +{delta:.0f} points across all roles to {e['name']}")
+
+    def on_ov_max_pts():
+        e = current_selected_emp[0]
+        if not e:
+            show_infobar("Select an employee first", is_success=False)
+            return
+        game.set_all_employee_spec_points(e["emp_ptr"], 50.0)
+        for i in range(len(e["spec_exp"])):
+            e["spec_exp"][i] = 50.0
+        update_points_display_in_inspector(e)
+        show_infobar(f"Maxed points (50 pts per role) for {e['name']}")
+
+    def on_ov_refund_used():
+        e = current_selected_emp[0]
+        if not e:
+            show_infobar("Select an employee first", is_success=False)
+            return
+        game.reset_employee_spec_used(e["emp_ptr"])
+        for i in range(len(e["spec_used"])):
+            e["spec_used"][i] = 0
+        update_points_display_in_inspector(e)
+        show_infobar(f"Reset allocated points for {e['name']} (unlocked capacity)")
 
     def on_insp_godmode():
         e = current_selected_emp[0]
@@ -1484,12 +1619,8 @@ def run_gui():
                     e["specs"][rname][sk] = 3
 
         select_employee_for_inspector(e, full_rebuild=False)
-        if e["actor_ptr"] in card_widgets:
-            card_widgets[e["actor_ptr"]]["vitals"].configure(
-                text=f"Energy: 100% | Stress: 0% | ${e['salary']:,.0f}",
-                text_color=C_TEXT_SEC
-            )
-        show_infobar(f"Restored needs, skills, and removed weaknesses for {e['name']}")
+        update_points_display_in_inspector(e)
+        show_infobar(f"Restored needs, skills, and added +25 points for {e['name']}")
 
     def on_insp_salary_toggle():
         e = current_selected_emp[0]
@@ -1499,17 +1630,9 @@ def run_gui():
         new_sal = 0.0 if e["salary"] > 0 else 1000.0
         game.set_employee_salary(e["emp_ptr"], new_sal)
         e["salary"] = new_sal
-        lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${new_sal:,.0f}/mo")
+        update_points_display_in_inspector(e)
         entry_sal.delete(0, "end")
         entry_sal.insert(0, f"{new_sal:.0f}")
-        if e["actor_ptr"] in card_widgets:
-            w_count = len(e["weaknesses"])
-            w_text = f" | {w_count} Weak" if w_count > 0 else ""
-            w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
-            card_widgets[e["actor_ptr"]]["vitals"].configure(
-                text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${new_sal:,.0f}{w_text}",
-                text_color=w_col
-            )
         show_infobar(f"Assigned ${new_sal:,.0f} salary to {e['name']}")
 
     ctk.CTkButton(row_ov_actions, text="Restore Needs & Skills", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
@@ -1524,6 +1647,30 @@ def run_gui():
     lbl_ov_v1.pack(anchor="w", padx=10, pady=2)
     lbl_ov_v2 = ctk.CTkLabel(c_ov_vitals, text="Satisfaction: 150% | Creativity: 100%", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
     lbl_ov_v2.pack(anchor="w", padx=10, pady=2)
+
+    # Overview Specialization Points Card
+    c_ov_pts = ctk.CTkFrame(f_ov, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_ov_pts.pack(fill="x", pady=4, ipady=4)
+    row_ov_pts_hdr = ctk.CTkFrame(c_ov_pts, fg_color="transparent")
+    row_ov_pts_hdr.pack(fill="x", padx=10, pady=(4, 2))
+    ctk.CTkLabel(row_ov_pts_hdr, text="Specialization Points", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+    lbl_ov_pts_summary = ctk.CTkLabel(row_ov_pts_hdr, text="Available: 0 Pts | Allocated: 0", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT)
+    lbl_ov_pts_summary.pack(side="right")
+
+    lbl_ov_pts_breakdown = ctk.CTkLabel(c_ov_pts, text="Lead: 0  Code: 0  Des: 0  Art: 0  Serv: 0", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+    lbl_ov_pts_breakdown.pack(anchor="w", padx=10, pady=(1, 4))
+
+    row_ov_pts_btns = ctk.CTkFrame(c_ov_pts, fg_color="transparent")
+    row_ov_pts_btns.pack(fill="x", padx=8, pady=(0, 4))
+
+    ctk.CTkButton(row_ov_pts_btns, text="+5 Pts (All)", height=24, font=ctk.CTkFont(family="Segoe UI", size=9),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(5.0)).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_ov_pts_btns, text="+10 Pts (All)", height=24, font=ctk.CTkFont(family="Segoe UI", size=9),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(10.0)).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_ov_pts_btns, text="Max (50)", height=24, font=ctk.CTkFont(family="Segoe UI", size=9),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_ov_max_pts).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_ov_pts_btns, text="Refund Used", height=24, font=ctk.CTkFont(family="Segoe UI", size=9),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_ov_refund_used).pack(side="left", expand=True, fill="x", padx=1)
 
     # Overview Traits & Weaknesses Preview
     c_ov_traits = ctk.CTkFrame(f_ov, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
@@ -1641,19 +1788,33 @@ def run_gui():
         sl_sk.pack(fill="x", padx=10, pady=(2, 4))
         skill_sliders[r_idx] = sl_sk
 
-    ctk.CTkLabel(f_skills, text="Specialization Points / EXP (by Role)", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=4, pady=(10, 4))
+    # Bulk points actions for current employee
+    c_bulk_pts = ctk.CTkFrame(f_skills, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_bulk_pts.pack(fill="x", pady=(10, 4), ipady=3)
+    row_bp_hdr = ctk.CTkFrame(c_bulk_pts, fg_color="transparent")
+    row_bp_hdr.pack(fill="x", padx=10, pady=(2, 2))
+    ctk.CTkLabel(row_bp_hdr, text="Quick Points to All 5 Roles", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+    row_bp_btns = ctk.CTkFrame(c_bulk_pts, fg_color="transparent")
+    row_bp_btns.pack(fill="x", padx=8, pady=(2, 4))
+
+    ctk.CTkButton(row_bp_btns, text="+5 All", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(5.0)).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_bp_btns, text="+10 All", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(10.0)).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_bp_btns, text="+25 All", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(25.0)).pack(side="left", expand=True, fill="x", padx=1)
+    ctk.CTkButton(row_bp_btns, text="Refund Used", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_ov_refund_used).pack(side="left", expand=True, fill="x", padx=1)
+
+    ctk.CTkLabel(f_skills, text="Specialization Points by Role", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=4, pady=(8, 4))
     for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
         c_exp = ctk.CTkFrame(f_skills, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
         c_exp.pack(fill="x", pady=2, ipady=3)
         row = ctk.CTkFrame(c_exp, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(2, 0))
-        ctk.CTkLabel(row, text=rname, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
-        lbl_ev = ctk.CTkLabel(row, text="Points: 0.0", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+        ctk.CTkLabel(row, text=f"■ {rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+        lbl_ev = ctk.CTkLabel(row, text="Unspent: 0.0 pts  |  Allocated: 0", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
         lbl_ev.pack(side="right")
         exp_labels[r_idx] = lbl_ev
 
-        row_btns = ctk.CTkFrame(c_exp, fg_color="transparent")
-        row_btns.pack(fill="x", padx=8, pady=(2, 4))
+        row_qbtns = ctk.CTkFrame(c_exp, fg_color="transparent")
+        row_qbtns.pack(fill="x", padx=8, pady=(2, 2))
 
         def make_exp_adder(idx=r_idx, delta=5.0):
             def handler():
@@ -1664,20 +1825,62 @@ def run_gui():
                     game.set_employee_spec_exp(e["emp_ptr"], idx, new_val)
                     if idx < len(e["spec_exp"]):
                         e["spec_exp"][idx] = new_val
-                    used = e["spec_used"][idx] if idx < len(e["spec_used"]) else 0
-                    exp_labels[idx].configure(text=f"Points: {new_val:.1f} (Used: {used})")
-                    show_infobar(f"Added +{delta:g} EXP to {GameMemory.ROLE_NAMES[idx]}")
+                    update_points_display_in_inspector(e)
+                    show_infobar(f"Added +{delta:g} pts to {GameMemory.ROLE_NAMES[idx]}")
             return handler
 
-        ctk.CTkButton(row_btns, text="+5 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 5.0)).pack(side="left", expand=True, fill="x", padx=1)
-        ctk.CTkButton(row_btns, text="+10 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 10.0)).pack(side="left", expand=True, fill="x", padx=1)
-        ctk.CTkButton(row_btns, text="+25 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 25.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_qbtns, text="+1 Pt", height=22, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 1.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_qbtns, text="+5 Pts", height=22, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 5.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_qbtns, text="+10 Pts", height=22, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 10.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_qbtns, text="Max (25)", height=22, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 25.0)).pack(side="left", expand=True, fill="x", padx=1)
+
+        row_exact = ctk.CTkFrame(c_exp, fg_color="transparent")
+        row_exact.pack(fill="x", padx=8, pady=(2, 4))
+        ctk.CTkLabel(row_exact, text="Set Exact:", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_MUTED).pack(side="left", padx=(2, 4))
+        ent_p = ctk.CTkEntry(row_exact, width=65, height=22, font=ctk.CTkFont(family="Segoe UI", size=10), placeholder_text="Points")
+        ent_p.pack(side="left", padx=2)
+        exp_entries[r_idx] = ent_p
+
+        def make_exact_setter(idx=r_idx, ent=ent_p):
+            def handler():
+                e = current_selected_emp[0]
+                if not e:
+                    return
+                try:
+                    val = float(ent.get().strip())
+                    if val < 0:
+                        val = 0.0
+                    game.set_employee_spec_exp(e["emp_ptr"], idx, val)
+                    if idx < len(e["spec_exp"]):
+                        e["spec_exp"][idx] = val
+                    update_points_display_in_inspector(e)
+                    show_infobar(f"Set {GameMemory.ROLE_NAMES[idx]} points to {val:.1f}")
+                except ValueError:
+                    show_infobar("Enter a valid number of points", is_success=False)
+            return handler
+
+        def make_zero_setter(idx=r_idx):
+            def handler():
+                e = current_selected_emp[0]
+                if not e:
+                    return
+                game.set_employee_spec_exp(e["emp_ptr"], idx, 0.0)
+                if idx < len(e["spec_exp"]):
+                    e["spec_exp"][idx] = 0.0
+                update_points_display_in_inspector(e)
+                show_infobar(f"Reset {GameMemory.ROLE_NAMES[idx]} points to 0")
+            return handler
+
+        ctk.CTkButton(row_exact, text="Apply", width=55, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                      fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=make_exact_setter(r_idx, ent_p)).pack(side="left", padx=2)
+        ctk.CTkButton(row_exact, text="Reset (0)", width=60, height=22, font=ctk.CTkFont(family="Segoe UI", size=9),
+                      fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_zero_setter(r_idx)).pack(side="right", padx=2)
 
     # 4. Sub-Frame: Specializations Granular Editor
     f_specs = insp_views["specs"]
 
     row_sp_top = ctk.CTkFrame(f_specs, fg_color="transparent")
-    row_sp_top.pack(fill="x", pady=(2, 6))
+    row_sp_top.pack(fill="x", pady=(2, 4))
     ctk.CTkLabel(row_sp_top, text="Subfield Specializations", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
 
     def on_elevate_selected_specs():
@@ -1697,6 +1900,17 @@ def run_gui():
 
     ctk.CTkButton(row_sp_top, text="Elevate All to 3★", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_elevate_selected_specs).pack(side="right")
+
+    # Status card with available unspent points right at top of Specializations tab
+    c_sp_status = ctk.CTkFrame(f_specs, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_sp_status.pack(fill="x", pady=(0, 6), ipady=2)
+    row_sps = ctk.CTkFrame(c_sp_status, fg_color="transparent")
+    row_sps.pack(fill="x", padx=10, pady=3)
+    lbl_sp_avail_pts = ctk.CTkLabel(row_sps, text="Available Points to Spend: 0", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT)
+    lbl_sp_avail_pts.pack(side="left")
+
+    ctk.CTkButton(row_sps, text="+10 Pts (All)", width=90, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=lambda: on_ov_add_pts(10.0)).pack(side="right")
 
     frame_specs_grid = ctk.CTkFrame(f_specs, fg_color="transparent")
     frame_specs_grid.pack(fill="both", expand=True)
@@ -1795,7 +2009,11 @@ def run_gui():
                         spec_btn_cache[(r_idx, spec_key)][target_star] = b
 
         if not has_specs:
-            ctk.CTkLabel(frame_specs_grid, text="No active specializations to adjust.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
+            c_empty = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+            c_empty.pack(fill="x", pady=12, padx=4, ipady=8)
+            ctk.CTkLabel(c_empty, text="No Active Specializations Initialized", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(padx=10, pady=(4, 2))
+            ctk.CTkLabel(c_empty, text="This employee has not selected or trained specialization fields in-game yet.\n\n• Use '+10 Pts (All)' above or the 'Skills & Points' tab to give unspent points to spend in-game.\n• Or click 'Elevate All to 3★' above to immediately unlock and maximize all fields.",
+                         font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC, justify="left", wraplength=360).pack(padx=10, pady=(2, 6))
 
     def rebuild_traits_grid(e: dict):
         for w in frame_traits_checklist.winfo_children():
@@ -1849,12 +2067,20 @@ def run_gui():
 
     def reset_inspector_view():
         lbl_insp_name.configure(text="Select an employee")
-        lbl_insp_team.configure(text="Team: N/A | Salary: $0")
+        lbl_insp_team.configure(text="Team: N/A | Salary: $0 | 0 Pts Available")
         lbl_ov_v1.configure(text="Energy: 100% | Stress: 0%")
         lbl_ov_v2.configure(text="Satisfaction: 100% | Creativity: 100%")
+        if lbl_ov_pts_summary:
+            lbl_ov_pts_summary.configure(text="Available: 0 Pts | Allocated: 0")
+        if lbl_ov_pts_breakdown:
+            lbl_ov_pts_breakdown.configure(text="Lead: 0  Code: 0  Des: 0  Art: 0  Serv: 0")
+        if lbl_sp_avail_pts:
+            lbl_sp_avail_pts.configure(text="Available Points to Spend: 0")
         lbl_ov_goods.configure(text="Good Traits: None")
         lbl_ov_bads.configure(text="Weaknesses: None (Clear)", text_color=C_SUCCESS)
         entry_sal.delete(0, "end")
+        for ent in exp_entries.values():
+            ent.delete(0, "end")
         for w in frame_specs_grid.winfo_children():
             w.destroy()
         ctk.CTkLabel(frame_specs_grid, text="Select an employee to view specializations.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
@@ -1867,7 +2093,6 @@ def run_gui():
         current_selected_emp[0] = e
         tag = " [Founder]" if e["founder"] else ""
         lbl_insp_name.configure(text=f"{e['name']}{tag}")
-        lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${e['salary']:,.0f}/mo")
 
         # Overview
         lbl_ov_v1.configure(text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}%")
@@ -1897,11 +2122,8 @@ def run_gui():
             if r_idx in skill_labels:
                 skill_labels[r_idx].configure(text=f"{int(val*100)}%")
 
-        # EXP Labels
-        for r_idx, lbl in exp_labels.items():
-            val = e["spec_exp"][r_idx] if r_idx < len(e["spec_exp"]) else 0.0
-            used = e["spec_used"][r_idx] if r_idx < len(e["spec_used"]) else 0
-            lbl.configure(text=f"Points: {val:.1f} (Used: {used})")
+        # Points & Allocation across all tabs
+        update_points_display_in_inspector(e)
 
         # Rebuild or sync grids in-place
         if full_rebuild:
@@ -1973,7 +2195,10 @@ def run_gui():
             w_text = f" | {w_count} Weak" if w_count > 0 else ""
             w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
 
-            lbl_vitals = ctk.CTkLabel(row_c, text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}{w_text}",
+            pts_count = e.get("total_points", 0)
+            pts_text = f" | {pts_count} Pts" if pts_count > 0 else ""
+
+            lbl_vitals = ctk.CTkLabel(row_c, text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}{w_text}{pts_text}",
                                       font=ctk.CTkFont(family="Segoe UI", size=10), text_color=w_col)
             lbl_vitals.pack(side="right")
 

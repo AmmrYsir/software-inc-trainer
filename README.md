@@ -15,21 +15,29 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 ### 👤 Deep Personnel & Staff Inspector
 Select any employee or facility staff member in the live roster to open the comprehensive 5-tab inspector:
 * **Zero-Lag Architecture**: Event-driven roster caching with instant in-place card selection. The roster never flickers or resets scroll positions.
+* **Point Badges in Roster**: Every personnel card displays live unspent points (`| X Pts`), energy, stress, salary, and active weaknesses directly in the list.
 * **On-Demand Memory Sync**: Includes a dedicated **↻ Refresh Roster** button and automatic sync on tab switch or batch actions.
 
 * **Tab 1: Overview**
   * Live status pill (Founder / Employee, Team assignment, Current Vitals summary).
+  * **Specialization Points Card**: Displays available unspent points, allocated/spent points, per-role breakdown (Lead, Code, Design, Art, Service), and quick point buttons (**+5 Pts (All)**, **+10 Pts (All)**, **Max (50)**, **Refund Used**).
   * Direct Salary Editor (adjust salary dynamically or click **Free Labor** for $0 salary).
-  * Quick Actions: **Instant Godmode** (max needs & skills) and **Cure Weaknesses** (instantly strip all negative traits).
+  * Quick Actions: **Instant Godmode** (max needs & skills, +25 points) and **Free Labor ($0)**.
 * **Tab 2: Needs & Vitals**
   * Real-time sliders for individual needs: **Energy**, **Stress** (lower is better), **Satisfaction**, **Creativity**, **Hunger**, **Social**, and **Bladder**.
   * Instant **Maximize Vitals** preset.
-* **Tab 3: Skills & Specialization EXP**
+* **Tab 3: Skills & Points (Specialization Points & EXP)**
   * Sliders for all 5 foundational role skills (0% to 100%): **Lead**, **Code**, **Design**, **Art**, and **Service**.
-  * Granular Specialization EXP booster: inject **+5**, **+10**, or **+25** unallocated specialization points per role.
+  * **Quick Point Bundles**: Grant **+5**, **+10**, or **+25** points to all 5 roles at once, or click **Refund Used** to reset spent point capacity.
+  * **Per-Role Points Editor**:
+    * Live status display: `Unspent: X.X pts | Allocated: Y`
+    * Quick Presets: **+1 Pt**, **+5 Pts**, **+10 Pts**, **Max (25)**
+    * **Direct Numeric Input Box**: Enter any exact number of points and click **Apply** (or click **Reset (0)**).
 * **Tab 4: Subfield Specializations**
+  * Live status header showing **Available Points to Spend** and **+10 Pts (All)** quick button.
   * Full interactive grid of all subfields (System, Hardware, 2D, 3D, Audio, Network, HR, Automation, Marketing, Support, Law, Accounting).
   * Clickable star-rating selector for each subfield: **0★**, **1★**, **2★**, or **3★** with immediate in-game updates.
+  * Helpful guide card for unspecialized personnel explaining how to grant points and specialize.
 * **Tab 5: Weaknesses & Traits Management**
   * Trait Badges: visual chips distinguishing active positive traits (teal) and negative weaknesses (red).
   * **Remove Weaknesses**: Cleanses all 8 negative traits while preserving positive perks.
@@ -195,8 +203,14 @@ python trainer.py --max-employees
 # Elevate all active specializations across all employees to Level 3 (3 Stars)
 python trainer.py --max-specs
 
-# Add +20 Specialization EXP to all employees
+# Add +20 Specialization points to all employees
 python trainer.py --add-spec-exp 20.0
+
+# Set exact specialization points across all roles for all employees
+python trainer.py --set-spec-points 25.0
+
+# Reset spent specialization points (refund capacity) for all employees
+python trainer.py --reset-spec-used
 
 # Set all salaries to $0 (free labor)
 python trainer.py --free-salaries
