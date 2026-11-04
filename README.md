@@ -12,6 +12,28 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 * **WinUI 3 Design Language**: Clean SettingsCards, native navigation rail, proper Windows typography (`Segoe UI`), subtle borders, and zero clutter.
 * **Windows InfoBar**: Native status notifications and telemetry pills without invasive popups.
 
+### 👤 Deep Personnel & Staff Inspector
+Select any employee or facility staff member in the live roster to open the comprehensive 5-tab inspector:
+
+* **Tab 1: Overview**
+  * Live status pill (Founder / Employee, Team assignment, Current Vitals summary).
+  * Direct Salary Editor (adjust salary dynamically or click **Free Labor** for $0 salary).
+  * Quick Actions: **Instant Godmode** (max needs & skills) and **Cure Weaknesses** (instantly strip all negative traits).
+* **Tab 2: Needs & Vitals**
+  * Real-time sliders for individual needs: **Energy**, **Stress** (lower is better), **Satisfaction**, **Creativity**, **Hunger**, **Social**, and **Bladder**.
+  * Instant **Maximize Vitals** preset.
+* **Tab 3: Skills & Specialization EXP**
+  * Sliders for all 5 foundational role skills (0% to 100%): **Lead**, **Code**, **Design**, **Art**, and **Service**.
+  * Granular Specialization EXP booster: inject **+5**, **+10**, or **+25** unallocated specialization points per role.
+* **Tab 4: Subfield Specializations**
+  * Full interactive grid of all subfields (System, Hardware, 2D, 3D, Audio, Network, HR, Automation, Marketing, Support, Law, Accounting).
+  * Clickable star-rating selector for each subfield: **0★**, **1★**, **2★**, or **3★** with immediate in-game updates.
+* **Tab 5: Weaknesses & Traits Management**
+  * Trait Badges: visual chips distinguishing active positive traits (teal) and negative weaknesses (red).
+  * **Remove Weaknesses**: Cleanses all 8 negative traits while preserving positive perks.
+  * **Grant Master Traits**: Equips top-tier traits (*FastLearner*, *BigBrain*, *SuperFocus*, *ThisIsFine*, *Clean*).
+  * **Full Trait Toggle Grid**: Interactive checkable list of all 33 game traits to customize the employee's personality and work habits.
+
 ### 👑 Player & Founder Management
 * **Dedicated Founder Profile**: Direct telemetry and controls for the player character / company CEO.
 * **Founder Godmode**: Instantly restores 100% Energy, 100% Hunger, 100% Social, 100% Bladder, 200% Job Satisfaction, 100% Creativity, 100% Skill Ceiling, and eliminates Stress (0%).
@@ -25,10 +47,11 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 * **Batch Operations**:
   * **Max All Needs**: Restores 100% Energy, 100% Hunger, 100% Social, 100% Satisfaction, and drops Stress to 0% for every single personnel.
   * **Max All Base Skills**: Boosts all 5 core roles to 100% across the entire roster.
-  * **Max All Active Specializations**: Sets every active sub-specialization (System, Hardware, 2D, 3D, Audio, Network, HR, Automation, Marketing, Support, Law, Accounting) to 3 Stars.
+  * **Max All Active Specializations**: Sets every active sub-specialization to 3 Stars.
   * **Specialization EXP Injections**: Adds +20.0 EXP per role across all employees.
+  * **Remove All Weaknesses**: Cleanses negative traits across the entire company roster in one click.
+  * **Assign Free Labor ($0 Salary)**: Sets all employee salaries to $0.
   * **Lock Needs (Freeze)**: Continuous real-time lock to prevent fatigue and burnout.
-* **Selected Employee Inspector & Editor**: Click any employee in the roster to view granular specializations, godmode their stats, or adjust their salary (including setting $0 for volunteer labor).
 
 ### 💰 Corporate Finances
 * **Add Cash**: Instant cash injections (+$100k, +$1M, +$10M, +$100M).
@@ -46,9 +69,51 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 
 ---
 
+## 🧬 Supported Traits & Weaknesses Reference
+
+Software Inc. stores employee traits as a 64-bit bitmask at `Employee + 0x150`. All 33 traits are fully mapped:
+
+| Trait | Type | Bit Position | Effect / Description |
+| :--- | :---: | :---: | :--- |
+| **FastLearner** | Positive | `1 << 0` | Learns and gains skill points substantially faster |
+| **Independant** | Positive | `1 << 1` | Works effectively alone without supervision |
+| **BigBrain** | Positive | `1 << 2` | Higher skill maximum and faster work output |
+| **Humble** | Positive | `1 << 3` | Lower salary demands and humble attitude |
+| **Capacitor** | Positive | `1 << 4` | Energy drains much slower |
+| **WalkItOff** | Positive | `1 << 5` | Recovers quickly from minor ailments |
+| **ThisIsFine** | Positive | `1 << 6` | High stress resistance under heavy workloads |
+| **NightOwl** | Positive | `1 << 7` | Bonus efficiency during night shifts |
+| **BornLeader** | Positive | `1 << 8` | Significant leadership and team synergy boost |
+| **FirmwareInc** | Positive | `1 << 9` | Affinity for hardware and low-level code |
+| **SuperFocus** | Positive | `1 << 10` | Eliminates work distractions |
+| **Unphased** | Positive | `1 << 11` | Immune to office noise and environmental chatter |
+| **JustTheFlu** | Positive | `1 << 12` | Resistant to illness and absenteeism |
+| **Detached** | Positive | `1 << 13` | Social needs deplete much slower |
+| **Stressed** | **Weakness** | `1 << 14` | High stress vulnerability and prone to breakdowns |
+| **Hypochondriac** | **Weakness** | `1 << 15` | Frequently takes sick leave for trivial reasons |
+| **SlowEater** | **Weakness** | `1 << 16` | Spends prolonged periods eating at meals |
+| **NervousBladder** | **Weakness** | `1 << 17` | Frequent bathroom breaks |
+| **BumLeg** | **Weakness** | `1 << 18` | Slower movement speed across the office |
+| **Forgetful** | **Weakness** | `1 << 19` | Occasionally forgets tasks or makes mistakes |
+| **Cupholder** | Positive | `1 << 20` | Always has a drink handy |
+| **NeatFreak** | Positive | `1 << 21` | Keeps workstations immaculate |
+| **SilentButDeadly**| Positive | `1 << 22` | Discreet social presence |
+| **Watch** | Positive | `1 << 23` | Perfect punctuality |
+| **WalkInstead** | Positive | `1 << 24` | Prefers walking over elevators/transit |
+| **UnderTheWeather**| **Weakness** | `1 << 25` | Frequently feels sick or fatigued |
+| **OldSole** | Positive | `1 << 26` | Experienced and resilient |
+| **Sunshine** | Positive | `1 << 27` | Radiates positive mood to teammates |
+| **Skyscraper** | Positive | `1 << 28` | High tolerance for tall office buildings |
+| **RGBThumb** | Positive | `1 << 29` | Passion for art, design, and aesthetics |
+| **FriendMaker** | Positive | `1 << 30` | Boosts socialization across the entire team |
+| **Clean** | Positive | `1 << 31` | High hygiene and environmental cleanliness |
+| **Claustrophobic** | **Weakness** | `1 << 32` | Suffers severe stress in small or crowded rooms |
+
+---
+
 ## ⌨️ Global In-Game Hotkeys
 
-Hotkeys work seamlessly while playing Software Inc. without requiring alt-tabbing:
+Hotkeys work seamlessly in the background while playing Software Inc. without requiring alt-tabbing:
 
 | Hotkey | Action | Description |
 | :--- | :--- | :--- |
@@ -70,8 +135,8 @@ Hotkeys work seamlessly while playing Software Inc. without requiring alt-tabbin
 
 Unlike invasive DLL injection that can destabilize Unity garbage collection or trigger memory corruptions, this trainer utilizes an **external dynamic Mono symbol resolution engine**:
 
-1. **Read-Only Symbol Walk**: Inspects `mono-2.0-bdwgc.dll`'s `loaded_assemblies` linked list and traverses `Assembly-CSharp`'s `MonoInternalHashTable` to locate the exact runtime pointers for `GameSettings`, `Company`, `Cheats`, `TimeOfDay`, `ActorManager`, and `Team`.
-2. **Dynamic Pointer Chaining**: Resolves all objects dynamically at runtime:
+1. **Read-Only Symbol Walk**: Inspects `mono-2.0-bdwgc.dll`'s `loaded_assemblies` linked list and traverses `Assembly-CSharp`'s `MonoInternalHashTable` to locate runtime pointers for `GameSettings`, `Company`, `Cheats`, `TimeOfDay`, `ActorManager`, and `Team`.
+2. **Dynamic Pointer Chaining**:
    * Company at `GameSettings.Instance + 0x128`
    * ActorManager at `GameSettings.Instance + 0x120`
    * Active Actors at `ActorManager + 0x10`
@@ -79,7 +144,10 @@ Unlike invasive DLL injection that can destabilize Unity garbage collection or t
    * Teams Dictionary at `ActorManager + 0x40`
    * Team Reference per Actor at `Actor + 0x270`
    * Employee Data at `Actor + 0x138`
-3. **Safe Primitive Writes**: Writes only validated primitives (`double`, `float`, `uint`, `byte`) into verified heap structures via `WriteProcessMemory`, ensuring 100% game stability.
+   * Specialization EXP Array at `Employee + 0x20`
+   * Specializations Dict Array at `Employee + 0x18`
+   * Traits Bitmask at `Employee + 0x150`
+3. **Safe Primitive Writes**: Writes only validated primitives (`double`, `float`, `uint64`, `int32`, `byte`) into verified heap structures via `WriteProcessMemory`, ensuring 100% game stability.
 
 ---
 
@@ -101,14 +169,20 @@ python trainer.py
 
 ### Command Line Interface (CLI)
 
-Perform quick one-liner actions directly from your terminal:
+Perform quick actions directly from your terminal:
 
 ```powershell
+# View all available CLI options
+python trainer.py --help
+
 # Check live game status, founder, and total personnel
 python trainer.py --status
 
-# List all teams, employees, facility staff, and specializations
+# List all teams, employees, facility staff, salaries, and weaknesses
 python trainer.py --list-teams
+
+# Remove all weaknesses across all company personnel
+python trainer.py --remove-weaknesses
 
 # Enable Godmode for Founder / Player (100% Needs, 100% Skills, 3-Star Specs, +50 EXP)
 python trainer.py --max-founder
@@ -121,6 +195,9 @@ python trainer.py --max-specs
 
 # Add +20 Specialization EXP to all employees
 python trainer.py --add-spec-exp 20.0
+
+# Set all salaries to $0 (free labor)
+python trainer.py --free-salaries
 
 # Add $5,000,000 cash
 python trainer.py --add-money 5000000

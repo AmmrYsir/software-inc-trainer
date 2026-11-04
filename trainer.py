@@ -3,6 +3,14 @@ Software Inc. - Memory Trainer
 Native Windows 11 Fluent Design Application
 Supports: All Software Inc. versions running with Unity Mono x64
 Design: Windows App UI/UX (WinUI 3 / Fluent Design), Light & Dark mode support, Zero AI Slop.
+Features:
+  - Deep Personnel Editor: Granular Needs, Base Skills, Specialization Points (EXP),
+    Subfield Star Ratings (0-3), and Weaknesses & Traits Management.
+  - One-click Weakness Eraser & Master Traits Grant.
+  - VIP Founder Profile with live vitals, role specializations, and godmode.
+  - Treasury & Solvency Management (Cash injections, fans, reputation, bankruptcy clearing).
+  - World & Rule Modifiers (Furniture unlock, force lighting, darkness shader, simulation speed).
+  - Global In-Game Hotkeys (Numpad 1-9) with background listener.
 """
 
 import os
@@ -47,6 +55,45 @@ class GameMemory:
     """Handles external memory discovery and safe read/write operations for Software Inc."""
 
     ROLE_NAMES = ["Lead", "Code", "Design", "Art", "Service"]
+
+    # Complete enum mapping of all 33 traits in Software Inc.
+    ALL_TRAITS = [
+        ("FastLearner", 1 << 0, False),
+        ("Independant", 1 << 1, False),
+        ("BigBrain", 1 << 2, False),
+        ("Humble", 1 << 3, False),
+        ("Capacitor", 1 << 4, False),
+        ("WalkItOff", 1 << 5, False),
+        ("ThisIsFine", 1 << 6, False),
+        ("NightOwl", 1 << 7, False),
+        ("BornLeader", 1 << 8, False),
+        ("FirmwareInc", 1 << 9, False),
+        ("SuperFocus", 1 << 10, False),
+        ("Unphased", 1 << 11, False),
+        ("JustTheFlu", 1 << 12, False),
+        ("Detached", 1 << 13, False),
+        ("Stressed", 1 << 14, True),         # Weakness
+        ("Hypochondriac", 1 << 15, True),    # Weakness
+        ("SlowEater", 1 << 16, True),        # Weakness
+        ("NervousBladder", 1 << 17, True),   # Weakness
+        ("BumLeg", 1 << 18, True),           # Weakness
+        ("Forgetful", 1 << 19, True),        # Weakness
+        ("Cupholder", 1 << 20, False),
+        ("NeatFreak", 1 << 21, False),
+        ("SilentButDeadly", 1 << 22, False),
+        ("Watch", 1 << 23, False),
+        ("WalkInstead", 1 << 24, False),
+        ("UnderTheWeather", 1 << 25, True),  # Weakness
+        ("OldSole", 1 << 26, False),
+        ("Sunshine", 1 << 27, False),
+        ("Skyscraper", 1 << 28, False),
+        ("RGBThumb", 1 << 29, False),
+        ("FriendMaker", 1 << 30, False),
+        ("Clean", 1 << 31, False),
+        ("Claustrophobic", 1 << 32, True),   # Weakness
+    ]
+
+    BAD_TRAITS_MASK = 0x1020FC000  # Combined bitmask for all 8 weaknesses
 
     def __init__(self):
         self.pid = None
@@ -147,6 +194,12 @@ class GameMemory:
             return False
         b = (ctypes.c_uint * 1)(val & 0xFFFFFFFF)
         return bool(k32.WriteProcessMemory(self.handle, ctypes.c_void_p(addr), b, 4, 0))
+
+    def write_u64(self, addr: int, val: int) -> bool:
+        if not addr or not self.handle:
+            return False
+        b = (ctypes.c_ulonglong * 1)(val & 0xFFFFFFFFFFFFFFFF)
+        return bool(k32.WriteProcessMemory(self.handle, ctypes.c_void_p(addr), b, 8, 0))
 
     def write_float(self, addr: int, val: float) -> bool:
         if not addr or not self.handle:
@@ -371,16 +424,6 @@ class GameMemory:
             return False
         return self.write_u8(self.sdata_cheats + 0x04, 1 if enable else 0)
 
-    def get_cheat_states(self) -> dict:
-        if not self.sdata_cheats:
-            return {"unlock_furn": False, "force_lights": False, "disable_darkness": False, "infinite_subs": False}
-        return {
-            "unlock_furn": bool(self.read_u8(self.sdata_cheats + 0x01)),
-            "force_lights": bool(self.read_u8(self.sdata_cheats + 0x02)),
-            "disable_darkness": bool(self.read_u8(self.sdata_cheats + 0x00)),
-            "infinite_subs": bool(self.read_u8(self.sdata_cheats + 0x04)),
-        }
-
     # --- Personnel Discovery ---
 
     def get_employees(self) -> list:
@@ -389,7 +432,7 @@ class GameMemory:
 
         actors_map = {}
 
-        # 1. Actors (+0x10)
+        # 1. Actors (+0x10) - Active on-site employees
         act_list = self.read_ptr(self.actor_manager + 0x10)
         if act_list:
             inner = self.read_ptr(act_list + 0x20)
@@ -401,7 +444,7 @@ class GameMemory:
                     if a and a not in actors_map:
                         actors_map[a] = None
 
-        # 2. Staff (+0x18)
+        # 2. Staff (+0x18) - Facility staff (cleaners, maintenance, IT)
         staff_list = self.read_ptr(self.actor_manager + 0x18)
         if staff_list:
             inner = self.read_ptr(staff_list + 0x20)
@@ -413,7 +456,7 @@ class GameMemory:
                     if a:
                         actors_map[a] = "Facility Staff"
 
-        # 3. Teams (+0x40)
+        # 3. Teams (+0x40) - Team rosters
         teams_dict = self.read_ptr(self.actor_manager + 0x40)
         if teams_dict:
             entries = self.read_ptr(teams_dict + 0x18)
@@ -506,6 +549,17 @@ class GameMemory:
                                     v_val = self.read_u32(e_addr + 16)
                                     specs_by_role[rname][k_str] = v_val
 
+            # Traits & Weaknesses Resolution
+            traits_mask = self.read_ptr(emp_ptr + 0x150)
+            goods = []
+            weaknesses = []
+            for tname, tbit, is_bad in self.ALL_TRAITS:
+                if traits_mask & tbit:
+                    if is_bad:
+                        weaknesses.append(tname)
+                    else:
+                        goods.append(tname)
+
             employees.append({
                 "index": idx,
                 "actor_ptr": actor_ptr,
@@ -526,7 +580,10 @@ class GameMemory:
                 "skills": skills,
                 "spec_exp": spec_exp,
                 "spec_used": spec_used,
-                "specs": specs_by_role
+                "specs": specs_by_role,
+                "traits_mask": traits_mask,
+                "goods": goods,
+                "weaknesses": weaknesses,
             })
             idx += 1
 
@@ -539,7 +596,25 @@ class GameMemory:
                 return e
         return emps[0] if emps else None
 
-    # --- Modifiers ---
+    # --- Granular Modifiers ---
+
+    def set_employee_need(self, emp_ptr: int, need_name: str, value: float) -> bool:
+        if not emp_ptr:
+            return False
+        offsets = {
+            "energy": 0x134,
+            "stress": 0x140,
+            "hunger": 0x130,
+            "bladder": 0x138,
+            "social": 0x13C,
+            "satisfaction": 0x15C,
+            "creativity": 0xC4,
+            "skill_ceiling": 0x118,
+        }
+        off = offsets.get(need_name.lower())
+        if not off:
+            return False
+        return self.write_float(emp_ptr + off, float(value))
 
     def max_employee_needs(self, emp_ptr: int) -> bool:
         if not emp_ptr:
@@ -554,6 +629,18 @@ class GameMemory:
         self.write_float(emp_ptr + 0x118, 1.0)  # SkillCeiling = 100%
         return True
 
+    def set_employee_skill(self, emp_ptr: int, role_idx: int, value: float) -> bool:
+        if not emp_ptr or role_idx < 0 or role_idx >= 5:
+            return False
+        skills_arr = self.read_ptr(emp_ptr + 0xA8)
+        if not skills_arr:
+            return False
+        scount = self.read_u32(skills_arr + 0x18)
+        if role_idx >= scount:
+            return False
+        val = max(0.0, min(1.0, float(value)))
+        return self.write_float(skills_arr + 0x20 + role_idx * 4, val)
+
     def max_employee_skills(self, emp_ptr: int) -> bool:
         if not emp_ptr:
             return False
@@ -563,6 +650,51 @@ class GameMemory:
             for r in range(min(scount, 5)):
                 self.write_float(skills_arr + 0x20 + r * 4, 1.0)
             return True
+        return False
+
+    def set_employee_spec_exp(self, emp_ptr: int, role_idx: int, value: float) -> bool:
+        if not emp_ptr or role_idx < 0 or role_idx >= 5:
+            return False
+        exp_arr = self.read_ptr(emp_ptr + 0x20)
+        if not exp_arr:
+            return False
+        ecount = self.read_u32(exp_arr + 0x18)
+        if role_idx >= ecount:
+            return False
+        return self.write_float(exp_arr + 0x20 + role_idx * 4, max(0.0, float(value)))
+
+    def add_employee_spec_exp(self, emp_ptr: int, delta: float = 20.0) -> bool:
+        if not emp_ptr:
+            return False
+        exp_arr = self.read_ptr(emp_ptr + 0x20)
+        if not exp_arr:
+            return False
+        ecount = self.read_u32(exp_arr + 0x18)
+        for r in range(min(ecount, 5)):
+            current = self.read_float(exp_arr + 0x20 + r * 4)
+            self.write_float(exp_arr + 0x20 + r * 4, current + delta)
+        return True
+
+    def set_employee_spec_level(self, emp_ptr: int, role_idx: int, spec_key: str, target_level: int) -> bool:
+        if not emp_ptr or role_idx < 0 or role_idx >= 5:
+            return False
+        spec_levels_arr = self.read_ptr(emp_ptr + 0x18)
+        if not spec_levels_arr:
+            return False
+        dict_ptr = self.read_ptr(spec_levels_arr + 0x20 + role_idx * 8)
+        if not dict_ptr:
+            return False
+        d_entries = self.read_ptr(dict_ptr + 0x18)
+        if not d_entries:
+            return False
+        d_cap = self.read_u32(d_entries + 0x18)
+        for k in range(d_cap):
+            e_addr = d_entries + 0x20 + k * 24
+            k_ptr = self.read_ptr(e_addr + 8)
+            if k_ptr:
+                key_name = self.read_str_net(k_ptr)
+                if key_name.lower() == spec_key.lower():
+                    return self.write_u32(e_addr + 16, int(target_level))
         return False
 
     def max_employee_specs(self, emp_ptr: int, target_level: int = 3) -> int:
@@ -589,22 +721,62 @@ class GameMemory:
                     modified += 1
         return modified
 
-    def add_employee_spec_exp(self, emp_ptr: int, delta: float = 20.0) -> bool:
+    # --- Weaknesses & Traits Management ---
+
+    def remove_employee_weaknesses(self, emp_ptr: int) -> int:
+        if not emp_ptr:
+            return 0
+        mask = self.read_ptr(emp_ptr + 0x150)
+        removed = 0
+        for name, bit, is_bad in self.ALL_TRAITS:
+            if is_bad and (mask & bit):
+                removed += 1
+        new_mask = mask & (~self.BAD_TRAITS_MASK)
+        self.write_u64(emp_ptr + 0x150, new_mask)
+        return removed
+
+    def remove_all_personnel_weaknesses(self) -> int:
+        emps = self.get_employees()
+        total_removed = 0
+        for e in emps:
+            total_removed += self.remove_employee_weaknesses(e["emp_ptr"])
+        return total_removed
+
+    def grant_master_traits(self, emp_ptr: int) -> bool:
         if not emp_ptr:
             return False
-        exp_arr = self.read_ptr(emp_ptr + 0x20)
-        if not exp_arr:
+        mask = self.read_ptr(emp_ptr + 0x150)
+        # Master traits: FastLearner, BigBrain, SuperFocus, ThisIsFine, Clean
+        master_set = {"FastLearner", "BigBrain", "SuperFocus", "ThisIsFine", "Clean"}
+        add_mask = 0
+        for name, bit, _ in self.ALL_TRAITS:
+            if name in master_set:
+                add_mask |= bit
+        new_mask = mask | add_mask
+        return self.write_u64(emp_ptr + 0x150, new_mask)
+
+    def set_employee_trait_toggle(self, emp_ptr: int, trait_name: str, enable: bool) -> bool:
+        if not emp_ptr:
             return False
-        ecount = self.read_u32(exp_arr + 0x18)
-        for r in range(min(ecount, 5)):
-            current = self.read_float(exp_arr + 0x20 + r * 4)
-            self.write_float(exp_arr + 0x20 + r * 4, current + delta)
-        return True
+        mask = self.read_ptr(emp_ptr + 0x150)
+        for name, bit, _ in self.ALL_TRAITS:
+            if name.lower() == trait_name.lower():
+                new_mask = (mask | bit) if enable else (mask & (~bit))
+                return self.write_u64(emp_ptr + 0x150, new_mask)
+        return False
 
     def set_employee_salary(self, emp_ptr: int, salary: float) -> bool:
         if not emp_ptr:
             return False
         return self.write_float(emp_ptr + 0x160, float(salary))
+
+    def set_all_employees_free_salary(self) -> int:
+        emps = self.get_employees()
+        for e in emps:
+            self.set_employee_salary(e["emp_ptr"], 0.0)
+        return len(emps)
+
+    # --- Batch Operations ---
 
     def max_all_employees_needs(self) -> int:
         emps = self.get_employees()
@@ -633,6 +805,26 @@ def run_cli(args):
     print("==========================================================")
     print("           SOFTWARE INC. MEMORY TRAINER (CLI)             ")
     print("==========================================================")
+
+    if any(a in ("--help", "-h", "/?", "help") for a in args):
+        print("Usage: python trainer.py [options]")
+        print("\nOptions:")
+        print("  --status                  Print current game, treasury, and personnel stats")
+        print("  --list-teams              List all personnel grouped by team with stats & traits")
+        print("  --add-money <amount>      Add funds to corporate treasury")
+        print("  --set-money <amount>      Set exact corporate treasury balance")
+        print("  --add-fans <count>        Add company fans")
+        print("  --set-rep <0-100>         Set business reputation percentage")
+        print("  --max-founder             Max out Founder vitals, skills, specs & clear weaknesses")
+        print("  --max-employees           Max out all employees' needs and base skills to 100%")
+        print("  --max-specs               Elevate all employee specializations to 3 stars")
+        print("  --add-spec-exp <points>   Grant specialization points (EXP) across all roles")
+        print("  --remove-weaknesses       Cure/remove all 8 negative traits from all personnel")
+        print("  --free-salaries           Set all personnel salaries to $0 (free labor)")
+        print("  --unlock-furniture        Unlock all locked furniture and equipment")
+        print("  --force-lights            Force all lights on")
+        print("  --speed <multiplier>      Set game simulation speed (e.g. 1.0, 5.0)")
+        return 0
 
     if not game.attach():
         print("[!] ERROR: Could not attach to Software Inc.exe.")
@@ -687,7 +879,8 @@ def run_cli(args):
                 game.max_employee_skills(p)
                 sp = game.max_employee_specs(p, 3)
                 game.add_employee_spec_exp(p, 50.0)
-                print(f"[SUCCESS] Maxed Founder '{founder['name']}': 100% Needs, 100% Skills, {sp} Specs Maxed, +50 EXP!")
+                game.remove_employee_weaknesses(p)
+                print(f"[SUCCESS] Maxed Founder '{founder['name']}': 100% Needs, 100% Skills, {sp} Specs Maxed, Weaknesses Removed, +50 EXP!")
             i += 1
         elif cmd == "--max-employees":
             n = game.max_all_employees_needs()
@@ -703,6 +896,14 @@ def run_cli(args):
             n = game.add_all_employees_spec_exp(delta)
             print(f"[SUCCESS] Added +{delta:.1f} Specialization EXP across all roles for {n} employees!")
             i += 2
+        elif cmd == "--remove-weaknesses":
+            rem = game.remove_all_personnel_weaknesses()
+            print(f"[SUCCESS] Removed {rem} weaknesses across all company personnel!")
+            i += 1
+        elif cmd == "--free-salaries":
+            count = game.set_all_employees_free_salary()
+            print(f"[SUCCESS] Assigned $0 salary (Free Labor) to all {count} personnel!")
+            i += 1
         elif cmd == "--list-teams":
             emps = game.get_employees()
             by_team = {}
@@ -713,7 +914,8 @@ def run_cli(args):
                 print(f"\n[Team: {tname}] ({len(members)} members)")
                 for m in members:
                     tag = " [FOUNDER]" if m["founder"] else ""
-                    print(f"  - {m['name']}{tag}: Salary ${m['salary']:,.0f} | Energy {m['energy']*100:.0f}% | Stress {m['stress']*100:.0f}% | Sat {m['satisfaction']*100:.0f}%")
+                    w_tag = f" | Weaknesses: {', '.join(m['weaknesses'])}" if m['weaknesses'] else ""
+                    print(f"  - {m['name']}{tag}: Salary ${m['salary']:,.0f} | Energy {m['energy']*100:.0f}% | Stress {m['stress']*100:.0f}%{w_tag}")
             i += 1
         elif cmd == "--speed" and i + 1 < len(args):
             spd = float(args[i+1])
@@ -753,15 +955,16 @@ def run_gui():
     C_SUCCESS_BG = ("#DFF6DD", "#153315")
     C_ERROR = ("#A80000", "#F1707A")
     C_ERROR_BG = ("#FDE7E9", "#3D1719")
+    C_BADGE_WEAK = ("#FFF1F0", "#3E1E1E")
+    C_BADGE_GOOD = ("#E6FFFB", "#112F2D")
 
-    # Set system appearance by default
     ctk.set_appearance_mode("system")
     ctk.set_default_color_theme("blue")
 
     root = ctk.CTk()
     root.title("Software Inc. Trainer")
-    root.geometry("1000x740")
-    root.minsize(920, 660)
+    root.geometry("1080x780")
+    root.minsize(980, 680)
     root.configure(fg_color=C_WIN_BG)
 
     # State Variables
@@ -771,6 +974,7 @@ def run_gui():
     selected_team_filter = ctk.StringVar(value="All Teams")
     search_query_var = ctk.StringVar(value="")
     current_selected_emp = [None]
+    insp_subtab = ["overview"]
 
     # --- TOP APP BAR ---
     top_bar = ctk.CTkFrame(root, height=48, corner_radius=0, fg_color=C_CARD_BG,
@@ -791,7 +995,7 @@ def run_gui():
                                    text_color=C_ERROR)
     lbl_status_text.pack(padx=8, pady=2)
 
-    # Theme Mode Selector (Right)
+    # Theme Mode Selector
     def on_theme_change(choice: str):
         ctk.set_appearance_mode(choice.lower())
 
@@ -833,7 +1037,6 @@ def run_gui():
     main_body = ctk.CTkFrame(root, corner_radius=0, fg_color=C_WIN_BG)
     main_body.pack(fill="both", expand=True)
 
-    # Navigation Sidebar
     sidebar = ctk.CTkFrame(main_body, width=200, corner_radius=0, fg_color=C_SIDEBAR_BG,
                            border_width=1, border_color=C_BORDER)
     sidebar.pack(fill="y", side="left")
@@ -842,7 +1045,6 @@ def run_gui():
     content_viewport = ctk.CTkFrame(main_body, corner_radius=0, fg_color=C_WIN_BG)
     content_viewport.pack(fill="both", expand=True, padx=20, pady=16)
 
-    # Tab Pages
     pages = {
         "finances": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "founder": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
@@ -914,7 +1116,7 @@ def run_gui():
     btn_quick_god = ctk.CTkButton(sidebar, text="Boost All Personnel", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
                                   height=32, corner_radius=6, fg_color=C_BTN_SEC, text_color=C_TEXT_PRI,
                                   hover_color=C_BTN_SEC_HOVER,
-                                  command=lambda: (game.max_all_employees_needs(), game.max_all_employees_skills(), game.max_all_employees_specs(3), show_infobar("Restored needs, skills, and specializations for all personnel"), update_telemetry()))
+                                  command=lambda: (game.max_all_employees_needs(), game.max_all_employees_skills(), game.max_all_employees_specs(3), game.remove_all_personnel_weaknesses(), show_infobar("Restored needs, skills, and stripped weaknesses for all personnel"), update_telemetry()))
     btn_quick_god.pack(fill="x", padx=12, pady=(16, 12))
 
     # =========================================================
@@ -922,11 +1124,9 @@ def run_gui():
     # =========================================================
     p_fin = pages["finances"]
 
-    # Page Header
     ctk.CTkLabel(p_fin, text="Finances", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(0, 2))
     ctk.CTkLabel(p_fin, text="Manage company capital, valuation, fans, and market reputation.", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 14))
 
-    # Metric Cards Grid
     grid_metrics = ctk.CTkFrame(p_fin, fg_color="transparent")
     grid_metrics.pack(fill="x", pady=(0, 12))
     grid_metrics.columnconfigure((0, 1, 2), weight=1, uniform="metrics")
@@ -980,7 +1180,7 @@ def run_gui():
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=lambda: (game.set_business_rep(1.0), show_infobar("Business reputation set to 100%"), update_telemetry())).pack(fill="x", padx=12, pady=(0, 6))
 
-    # SettingsCard: Exact Treasury Balance Override
+    # Exact Balance Override
     sc_custom = ctk.CTkFrame(p_fin, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     sc_custom.pack(fill="x", pady=6, ipady=8)
 
@@ -1007,7 +1207,7 @@ def run_gui():
                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER,
                   command=on_set_custom_money).pack(side="right")
 
-    # SettingsCard: Preset Allocations & Solvency
+    # Solvency & Presets
     sc_solvency = ctk.CTkFrame(p_fin, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     sc_solvency.pack(fill="x", pady=6, ipady=8)
 
@@ -1035,7 +1235,6 @@ def run_gui():
     ctk.CTkLabel(p_fnd, text="Founder Profile", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(0, 2))
     ctk.CTkLabel(p_fnd, text="Inspect and enhance company founder attributes, needs, skills, and specializations.", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 14))
 
-    # Founder Header Card
     sc_fnd_hdr = ctk.CTkFrame(p_fnd, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     sc_fnd_hdr.pack(fill="x", pady=(0, 10), ipady=8)
 
@@ -1056,7 +1255,8 @@ def run_gui():
         if f:
             game.max_employee_needs(f["emp_ptr"])
             game.max_employee_skills(f["emp_ptr"])
-            show_infobar(f"Restored 100% needs and skills for Founder '{f['name']}'")
+            game.remove_employee_weaknesses(f["emp_ptr"])
+            show_infobar(f"Restored 100% needs, skills, and removed weaknesses for Founder '{f['name']}'")
             update_telemetry()
 
     def on_founder_max_specs():
@@ -1083,7 +1283,7 @@ def run_gui():
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=on_founder_add_exp).pack(side="left", expand=True, fill="x", padx=3)
 
-    # Founder Vitals Card (2x2 Grid)
+    # Founder Vitals Card
     sc_fnd_vitals = ctk.CTkFrame(p_fnd, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     sc_fnd_vitals.pack(fill="x", pady=6, ipady=8)
 
@@ -1137,11 +1337,11 @@ def run_gui():
         f_role_widgets[rname] = (lbl_r_title, lbl_r_specs)
 
     # =========================================================
-    # PAGE 3: PERSONNEL & TEAMS
+    # PAGE 3: PERSONNEL & TEAMS (DEEP PERSONNEL EDITOR)
     # =========================================================
     p_emp = pages["personnel"]
 
-    # Header & Search Toolbar
+    # Header Toolbar
     toolbar = ctk.CTkFrame(p_emp, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     toolbar.pack(fill="x", pady=(0, 8), ipady=6)
 
@@ -1170,7 +1370,7 @@ def run_gui():
                                        fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, corner_radius=4, padx=8, pady=3)
     lbl_emp_count_badge.pack(side="left")
 
-    # Batch Actions Row
+    # Global Batch Actions Row
     row_batch = ctk.CTkFrame(toolbar, fg_color="transparent")
     row_batch.pack(fill="x", padx=14, pady=(4, 6))
 
@@ -1180,38 +1380,71 @@ def run_gui():
     ctk.CTkButton(row_batch, text="Max All Skills", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=lambda: (game.max_all_employees_skills(), show_infobar("Maxed base skills for all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
-    ctk.CTkButton(row_batch, text="Elevate Specs (3 Stars)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+    ctk.CTkButton(row_batch, text="Elevate All Specs (3★)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
                   command=lambda: (game.max_all_employees_specs(3), show_infobar("Elevated specializations to Level 3 for all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
-    ctk.CTkButton(row_batch, text="Add +20 Spec EXP", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+    ctk.CTkButton(row_batch, text="Remove All Weaknesses", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (game.add_all_employees_spec_exp(20.0), show_infobar("Added +20 Specialization EXP to all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (show_infobar(f"Removed {game.remove_all_personnel_weaknesses()} weaknesses across company personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_batch, text="Free Labor ($0)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.set_all_employees_free_salary(), show_infobar("Assigned $0 salary to all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
 
-    # Master-Detail Container
+    # Master-Detail Split Container
     row_master_detail = ctk.CTkFrame(p_emp, fg_color="transparent")
     row_master_detail.pack(fill="both", expand=True)
 
-    # Left: Personnel Roster List
+    # Left: Roster List
     frame_roster = ctk.CTkScrollableFrame(row_master_detail, fg_color=C_CARD_BG, corner_radius=8,
                                           border_width=1, border_color=C_BORDER)
     frame_roster.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
-    # Right: Personnel Inspector Panel
-    frame_inspector = ctk.CTkFrame(row_master_detail, width=320, fg_color=C_CARD_BG, corner_radius=8,
+    # Right: Personnel Inspector & Editor Panel
+    frame_inspector = ctk.CTkFrame(row_master_detail, width=420, fg_color=C_CARD_BG, corner_radius=8,
                                    border_width=1, border_color=C_BORDER)
     frame_inspector.pack(side="right", fill="both")
     frame_inspector.pack_propagate(False)
 
-    ctk.CTkLabel(frame_inspector, text="Personnel Inspector", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_SEC).pack(anchor="w", padx=14, pady=(12, 2))
+    # Inspector Header
+    ctk.CTkLabel(frame_inspector, text="Personnel Editor & Inspector", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_SEC).pack(anchor="w", padx=14, pady=(10, 2))
     lbl_insp_name = ctk.CTkLabel(frame_inspector, text="Select an employee", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), text_color=C_TEXT_PRI)
     lbl_insp_name.pack(anchor="w", padx=14)
     lbl_insp_team = ctk.CTkLabel(frame_inspector, text="Team: N/A | Salary: $0", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC)
-    lbl_insp_team.pack(anchor="w", padx=14, pady=(0, 8))
+    lbl_insp_team.pack(anchor="w", padx=14, pady=(0, 6))
 
-    row_insp_btns = ctk.CTkFrame(frame_inspector, fg_color="transparent")
-    row_insp_btns.pack(fill="x", padx=12, pady=4)
+    # Subtab Segmented Switcher inside Inspector
+    subtab_bar = ctk.CTkSegmentedButton(frame_inspector, values=["Overview", "Needs", "Skills & EXP", "Specializations", "Traits"],
+                                        height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"))
+    subtab_bar.pack(fill="x", padx=12, pady=(0, 8))
+    subtab_bar.set("Overview")
 
-    def on_insp_boost():
+    # Inspector Sub-Frames
+    insp_views = {
+        "overview": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
+        "needs": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
+        "skills": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
+        "specs": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
+        "traits": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
+    }
+
+    def switch_insp_subtab(tab_name: str):
+        insp_subtab[0] = tab_name.lower().replace(" & exp", "")
+        for k, v in insp_views.items():
+            if k == insp_subtab[0]:
+                v.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+            else:
+                v.pack_forget()
+
+    subtab_bar.configure(command=switch_insp_subtab)
+
+    # 1. Sub-Frame: Overview
+    f_ov = insp_views["overview"]
+    f_ov.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+
+    row_ov_actions = ctk.CTkFrame(f_ov, fg_color="transparent")
+    row_ov_actions.pack(fill="x", pady=2)
+
+    def on_insp_godmode():
         e = current_selected_emp[0]
         if not e:
             show_infobar("Select an employee first", is_success=False)
@@ -1219,8 +1452,9 @@ def run_gui():
         game.max_employee_needs(e["emp_ptr"])
         game.max_employee_skills(e["emp_ptr"])
         game.max_employee_specs(e["emp_ptr"], 3)
+        game.remove_employee_weaknesses(e["emp_ptr"])
         game.add_employee_spec_exp(e["emp_ptr"], 25.0)
-        show_infobar(f"Restored needs, skills, and specializations for {e['name']}")
+        show_infobar(f"Restored needs, skills, and removed weaknesses for {e['name']}")
         update_telemetry()
 
     def on_insp_salary_toggle():
@@ -1233,48 +1467,296 @@ def run_gui():
         show_infobar(f"Assigned ${new_sal:,.0f} salary to {e['name']}")
         update_telemetry()
 
-    btn_insp_boost = ctk.CTkButton(row_insp_btns, text="Restore Needs & Skills", height=30, font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-                                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_insp_boost)
-    btn_insp_boost.pack(fill="x", pady=2)
+    ctk.CTkButton(row_ov_actions, text="Restore Needs & Skills", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_insp_godmode).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_ov_actions, text="Free Labor ($0)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_insp_salary_toggle).pack(side="left", expand=True, fill="x", padx=2)
 
-    btn_insp_free = ctk.CTkButton(row_insp_btns, text="Assign $0 Salary (Free Labor)", height=30, font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_insp_salary_toggle)
-    btn_insp_free.pack(fill="x", pady=2)
+    # Overview Quick Summary Card
+    c_ov_vitals = ctk.CTkFrame(f_ov, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_ov_vitals.pack(fill="x", pady=6, ipady=4)
+    lbl_ov_v1 = ctk.CTkLabel(c_ov_vitals, text="Energy: 100% | Stress: 0%", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI)
+    lbl_ov_v1.pack(anchor="w", padx=10, pady=2)
+    lbl_ov_v2 = ctk.CTkLabel(c_ov_vitals, text="Satisfaction: 150% | Creativity: 100%", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+    lbl_ov_v2.pack(anchor="w", padx=10, pady=2)
 
-    # Inspector Vitals
-    c_insp_vitals = ctk.CTkFrame(frame_inspector, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-    c_insp_vitals.pack(fill="x", padx=12, pady=8, ipady=4)
-    lbl_insp_v1 = ctk.CTkLabel(c_insp_vitals, text="Energy: 100% | Stress: 0%", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI)
-    lbl_insp_v1.pack(anchor="w", padx=10, pady=2)
-    lbl_insp_v2 = ctk.CTkLabel(c_insp_vitals, text="Satisfaction: 150% | Creativity: 100%", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
-    lbl_insp_v2.pack(anchor="w", padx=10, pady=2)
+    # Overview Traits & Weaknesses Preview
+    c_ov_traits = ctk.CTkFrame(f_ov, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_ov_traits.pack(fill="x", pady=4, ipady=4)
+    ctk.CTkLabel(c_ov_traits, text="Traits & Weaknesses", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=10, pady=(4, 2))
+    lbl_ov_goods = ctk.CTkLabel(c_ov_traits, text="Good Traits: None", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+    lbl_ov_goods.pack(anchor="w", padx=10, pady=1)
+    lbl_ov_bads = ctk.CTkLabel(c_ov_traits, text="Weaknesses: None", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ERROR)
+    lbl_ov_bads.pack(anchor="w", padx=10, pady=(1, 4))
 
-    ctk.CTkLabel(frame_inspector, text="Active Specializations", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_SEC).pack(anchor="w", padx=14, pady=(4, 2))
-    frame_insp_specs = ctk.CTkScrollableFrame(frame_inspector, fg_color=C_CARD_ALT, corner_radius=6, height=180)
-    frame_insp_specs.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+    # Overview Salary Editor
+    c_ov_sal = ctk.CTkFrame(f_ov, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+    c_ov_sal.pack(fill="x", pady=4, ipady=4)
+    ctk.CTkLabel(c_ov_sal, text="Custom Monthly Salary", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=10, pady=(4, 2))
+    row_sal_edit = ctk.CTkFrame(c_ov_sal, fg_color="transparent")
+    row_sal_edit.pack(fill="x", padx=10, pady=(0, 4))
+    entry_sal = ctk.CTkEntry(row_sal_edit, height=28, font=ctk.CTkFont(family="Segoe UI", size=11), placeholder_text="Enter salary (e.g. 1000)")
+    entry_sal.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
+    def on_apply_salary():
+        e = current_selected_emp[0]
+        if not e:
+            return
+        try:
+            val = float(entry_sal.get().replace(",", "").replace("$", ""))
+            game.set_employee_salary(e["emp_ptr"], val)
+            show_infobar(f"Assigned ${val:,.0f} salary to {e['name']}")
+            update_telemetry()
+        except ValueError:
+            show_infobar("Invalid numerical amount entered", is_success=False)
+
+    ctk.CTkButton(row_sal_edit, text="Apply Salary", width=90, height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_apply_salary).pack(side="right")
+
+    # 2. Sub-Frame: Needs & Vitals Editor
+    f_needs = insp_views["needs"]
+    needs_sliders = {}
+    needs_labels = {}
+
+    def make_need_slider(parent, need_key, display_name, max_val=1.0):
+        c = ctk.CTkFrame(parent, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+        c.pack(fill="x", pady=3, ipady=3)
+        row = ctk.CTkFrame(c, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(2, 0))
+        lbl_n = ctk.CTkLabel(row, text=display_name, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI)
+        lbl_n.pack(side="left")
+        lbl_v = ctk.CTkLabel(row, text="100%", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+        lbl_v.pack(side="right")
+        needs_labels[need_key] = lbl_v
+
+        def on_slide(val, k=need_key, mv=max_val, lv=lbl_v):
+            pct = int((val / mv) * 100)
+            lv.configure(text=f"{pct}%")
+            e = current_selected_emp[0]
+            if e:
+                game.set_employee_need(e["emp_ptr"], k, val)
+
+        sl = ctk.CTkSlider(c, from_=0.0, to=max_val, command=on_slide, progress_color=C_ACCENT, height=14)
+        sl.pack(fill="x", padx=10, pady=(2, 6))
+        needs_sliders[need_key] = sl
+
+    make_need_slider(f_needs, "energy", "Energy (Stamina)", 1.0)
+    make_need_slider(f_needs, "stress", "Stress (Fatigue Level)", 1.0)
+    make_need_slider(f_needs, "satisfaction", "Job Satisfaction", 2.0)
+    make_need_slider(f_needs, "creativity", "Creativity & Inspiration", 1.0)
+    make_need_slider(f_needs, "hunger", "Hunger / Nutrition", 1.0)
+    make_need_slider(f_needs, "social", "Social Need", 1.0)
+    make_need_slider(f_needs, "bladder", "Bladder Need", 1.0)
+
+    # 3. Sub-Frame: Base Skills & EXP Editor
+    f_skills = insp_views["skills"]
+    skill_sliders = {}
+    skill_labels = {}
+    exp_labels = {}
+
+    ctk.CTkLabel(f_skills, text="Foundational Base Skills (0% - 100%)", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=4, pady=(2, 4))
+    for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
+        c_sk = ctk.CTkFrame(f_skills, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+        c_sk.pack(fill="x", pady=2, ipady=2)
+        row = ctk.CTkFrame(c_sk, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(2, 0))
+        ctk.CTkLabel(row, text=rname, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+        lbl_sv = ctk.CTkLabel(row, text="100%", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+        lbl_sv.pack(side="right")
+        skill_labels[r_idx] = lbl_sv
+
+        def on_skill_slide(val, idx=r_idx, lv=lbl_sv):
+            pct = int(val * 100)
+            lv.configure(text=f"{pct}%")
+            e = current_selected_emp[0]
+            if e:
+                game.set_employee_skill(e["emp_ptr"], idx, val)
+
+        sl_sk = ctk.CTkSlider(c_sk, from_=0.0, to=1.0, command=on_skill_slide, progress_color=C_ACCENT, height=14)
+        sl_sk.pack(fill="x", padx=10, pady=(2, 4))
+        skill_sliders[r_idx] = sl_sk
+
+    ctk.CTkLabel(f_skills, text="Specialization Points / EXP (by Role)", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=4, pady=(10, 4))
+    for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
+        c_exp = ctk.CTkFrame(f_skills, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+        c_exp.pack(fill="x", pady=2, ipady=3)
+        row = ctk.CTkFrame(c_exp, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(2, 0))
+        ctk.CTkLabel(row, text=rname, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+        lbl_ev = ctk.CTkLabel(row, text="Points: 0.0", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+        lbl_ev.pack(side="right")
+        exp_labels[r_idx] = lbl_ev
+
+        row_btns = ctk.CTkFrame(c_exp, fg_color="transparent")
+        row_btns.pack(fill="x", padx=8, pady=(2, 4))
+
+        def make_exp_adder(idx=r_idx, delta=5.0):
+            def handler():
+                e = current_selected_emp[0]
+                if e:
+                    cur = e["spec_exp"][idx] if idx < len(e["spec_exp"]) else 0.0
+                    game.set_employee_spec_exp(e["emp_ptr"], idx, cur + delta)
+                    show_infobar(f"Added +{delta:g} EXP to {GameMemory.ROLE_NAMES[idx]}")
+                    update_telemetry()
+            return handler
+
+        ctk.CTkButton(row_btns, text="+5 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 5.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_btns, text="+10 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 10.0)).pack(side="left", expand=True, fill="x", padx=1)
+        ctk.CTkButton(row_btns, text="+25 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 25.0)).pack(side="left", expand=True, fill="x", padx=1)
+
+    # 4. Sub-Frame: Specializations Granular Editor
+    f_specs = insp_views["specs"]
+
+    row_sp_top = ctk.CTkFrame(f_specs, fg_color="transparent")
+    row_sp_top.pack(fill="x", pady=(2, 6))
+    ctk.CTkLabel(row_sp_top, text="Subfield Specializations", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+
+    def on_elevate_selected_specs():
+        e = current_selected_emp[0]
+        if e:
+            cnt = game.max_employee_specs(e["emp_ptr"], 3)
+            show_infobar(f"Elevated {cnt} specializations to Level 3 for {e['name']}")
+            update_telemetry()
+
+    ctk.CTkButton(row_sp_top, text="Elevate All to 3★", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_elevate_selected_specs).pack(side="right")
+
+    frame_specs_grid = ctk.CTkFrame(f_specs, fg_color="transparent")
+    frame_specs_grid.pack(fill="both", expand=True)
+
+    # 5. Sub-Frame: Weaknesses & Traits Manager
+    f_traits = insp_views["traits"]
+
+    row_tr_top = ctk.CTkFrame(f_traits, fg_color="transparent")
+    row_tr_top.pack(fill="x", pady=(2, 6))
+
+    def on_strip_selected_weaknesses():
+        e = current_selected_emp[0]
+        if e:
+            rem = game.remove_employee_weaknesses(e["emp_ptr"])
+            show_infobar(f"Removed {rem} weaknesses from {e['name']}")
+            update_telemetry()
+
+    def on_grant_master_traits():
+        e = current_selected_emp[0]
+        if e:
+            game.grant_master_traits(e["emp_ptr"])
+            show_infobar(f"Granted master positive traits to {e['name']}")
+            update_telemetry()
+
+    ctk.CTkButton(row_tr_top, text="Remove Weaknesses", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_strip_selected_weaknesses).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_tr_top, text="Grant Master Traits", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_grant_master_traits).pack(side="left", expand=True, fill="x", padx=2)
+
+    ctk.CTkLabel(f_traits, text="All Available Traits (Toggle)", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(6, 4))
+    frame_traits_checklist = ctk.CTkFrame(f_traits, fg_color="transparent")
+    frame_traits_checklist.pack(fill="both", expand=True)
+
+    # Function to update all inspector widgets when an employee is selected
     def select_employee_for_inspector(e: dict):
         current_selected_emp[0] = e
         tag = " [Founder]" if e["founder"] else ""
         lbl_insp_name.configure(text=f"{e['name']}{tag}")
         lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${e['salary']:,.0f}/mo")
-        lbl_insp_v1.configure(text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}%")
-        lbl_insp_v2.configure(text=f"Satisfaction: {e['satisfaction']*100:.0f}% | Creativity: {e['creativity']*100:.0f}%")
 
-        for w in frame_insp_specs.winfo_children():
+        # Overview
+        lbl_ov_v1.configure(text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}%")
+        lbl_ov_v2.configure(text=f"Satisfaction: {e['satisfaction']*100:.0f}% | Creativity: {e['creativity']*100:.0f}%")
+
+        goods_txt = ", ".join(e["goods"]) if e["goods"] else "None"
+        bads_txt = ", ".join(e["weaknesses"]) if e["weaknesses"] else "None (Clear)"
+        lbl_ov_goods.configure(text=f"Good Traits: {goods_txt}")
+        lbl_ov_bads.configure(text=f"Weaknesses: {bads_txt}", text_color=C_ERROR if e["weaknesses"] else C_SUCCESS)
+        entry_sal.delete(0, "end")
+        entry_sal.insert(0, f"{e['salary']:.0f}")
+
+        # Needs Sliders
+        for k, sl in needs_sliders.items():
+            val = e.get(k, 1.0)
+            sl.set(val)
+            pct = int(val * 100) if k != "satisfaction" else int(val * 50)
+            if k in needs_labels:
+                needs_labels[k].configure(text=f"{pct}%")
+
+        # Base Skills Sliders
+        for r_idx, sl in skill_sliders.items():
+            val = e["skills"][r_idx] if r_idx < len(e["skills"]) else 0.0
+            sl.set(val)
+            if r_idx in skill_labels:
+                skill_labels[r_idx].configure(text=f"{int(val*100)}%")
+
+        # EXP Labels
+        for r_idx, lbl in exp_labels.items():
+            val = e["spec_exp"][r_idx] if r_idx < len(e["spec_exp"]) else 0.0
+            used = e["spec_used"][r_idx] if r_idx < len(e["spec_used"]) else 0
+            lbl.configure(text=f"Points: {val:.1f} (Used: {used})")
+
+        # Granular Specs Grid
+        for w in frame_specs_grid.winfo_children():
             w.destroy()
 
         has_specs = False
-        for rname in GameMemory.ROLE_NAMES:
+        for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
             specs = e["specs"].get(rname, {})
             if specs:
                 has_specs = True
-                ctk.CTkLabel(frame_insp_specs, text=f"{rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(3, 1))
-                spec_line = ", ".join([f"{k} (Lvl {lvl})" for k, lvl in specs.items()])
-                ctk.CTkLabel(frame_insp_specs, text=f"  {spec_line}", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC).pack(anchor="w")
+                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(4, 2))
+                for spec_key, cur_lvl in specs.items():
+                    row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+                    row_s.pack(fill="x", pady=2, ipady=2)
+                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
+
+                    # Star level buttons: 0, 1, 2, 3
+                    row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
+                    row_stars.pack(side="right", padx=6)
+
+                    for target_star in [0, 1, 2, 3]:
+                        is_active = (cur_lvl == target_star)
+                        b_col = C_ACCENT if is_active else C_BTN_SEC
+                        t_col = C_ACCENT_TEXT if is_active else C_TEXT_PRI
+                        btn_label = f"{target_star}★"
+
+                        def make_spec_setter(ridx=r_idx, skey=spec_key, tlvl=target_star):
+                            def handler():
+                                emp = current_selected_emp[0]
+                                if emp:
+                                    game.set_employee_spec_level(emp["emp_ptr"], ridx, skey, tlvl)
+                                    update_telemetry()
+                            return handler
+
+                        ctk.CTkButton(row_stars, text=btn_label, width=32, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                                      fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter()).pack(side="left", padx=1)
 
         if not has_specs:
-            ctk.CTkLabel(frame_insp_specs, text="No active specializations", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(anchor="w", pady=6)
+            ctk.CTkLabel(frame_specs_grid, text="No active specializations to adjust.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
+
+        # Traits Checklist
+        for w in frame_traits_checklist.winfo_children():
+            w.destroy()
+
+        for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
+            is_enabled = bool(e["traits_mask"] & tbit)
+            row_tr = ctk.CTkFrame(frame_traits_checklist, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+            row_tr.pack(fill="x", pady=1, ipady=1)
+
+            type_tag = "[Weakness] " if is_bad else ""
+            t_col = C_ERROR if is_bad else C_TEXT_PRI
+            lbl_tr = ctk.CTkLabel(row_tr, text=f"{type_tag}{tname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold" if is_bad else "normal"), text_color=t_col)
+            lbl_tr.pack(side="left", padx=8)
+
+            var_tr = ctk.BooleanVar(value=is_enabled)
+
+            def make_tr_toggler(t_name=tname, v=var_tr):
+                def handler():
+                    emp = current_selected_emp[0]
+                    if emp:
+                        game.set_employee_trait_toggle(emp["emp_ptr"], t_name, v.get())
+                        update_telemetry()
+                return handler
+
+            sw = ctk.CTkSwitch(row_tr, text="", variable=var_tr, command=make_tr_toggler(), progress_color=C_ERROR if is_bad else C_ACCENT, width=36)
+            sw.pack(side="right", padx=6)
 
     def update_roster_view():
         emps = game.get_employees()
@@ -1315,8 +1797,12 @@ def run_gui():
                                      fg_color=C_BTN_SEC, text_color=C_TEXT_SEC, corner_radius=4, padx=6, pady=1)
             pill_team.pack(side="left", padx=8)
 
-            lbl_vitals = ctk.CTkLabel(row_c, text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}",
-                                      font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+            w_count = len(e["weaknesses"])
+            w_text = f" | {w_count} Weak" if w_count > 0 else ""
+            w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+
+            lbl_vitals = ctk.CTkLabel(row_c, text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}{w_text}",
+                                      font=ctk.CTkFont(family="Segoe UI", size=10), text_color=w_col)
             lbl_vitals.pack(side="right")
 
             def make_click_handler(emp_data=e):
@@ -1338,7 +1824,6 @@ def run_gui():
     ctk.CTkLabel(p_wrld, text="World & Rules", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(0, 2))
     ctk.CTkLabel(p_wrld, text="Modify simulation speed, furniture availability, and fixture lighting.", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 14))
 
-    # Setting Card: Furniture Unlock
     def make_setting_switch(parent, title, desc, on_toggle, default_state=False):
         card = ctk.CTkFrame(parent, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
         card.pack(fill="x", pady=4, ipady=6)
@@ -1373,7 +1858,7 @@ def run_gui():
                         "Removes the cap restricting the number of corporate subsidiaries your company can hold.",
                         lambda on: (game.infinite_subsidiaries(on), show_infobar(f"Infinite subsidiaries set to {on}")))
 
-    # Setting Card: Simulation Speed Multiplier
+    # Simulation Speed Multiplier Card
     sc_spd = ctk.CTkFrame(p_wrld, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
     sc_spd.pack(fill="x", pady=6, ipady=8)
 
@@ -1494,7 +1979,7 @@ def run_gui():
                 specs_desc = ", ".join([f"{k} (Lvl {lvl})" for k, lvl in specs.items()]) if specs else "No active specializations"
                 if r_name in f_role_widgets:
                     lbl_t, lbl_s = f_role_widgets[r_name]
-                    lbl_t.configure(text=f"{rname} (Base Skill: {bskill})")
+                    lbl_t.configure(text=f"{r_name} (Base Skill: {bskill})")
                     lbl_s.configure(text=specs_desc)
 
         # Team Filter Options
@@ -1506,6 +1991,12 @@ def run_gui():
             opt_team.configure(values=all_options)
 
         update_roster_view()
+
+        if current_selected_emp[0]:
+            for e in emps:
+                if e["actor_ptr"] == current_selected_emp[0]["actor_ptr"]:
+                    select_employee_for_inspector(e)
+                    break
 
         if freeze_needs_var.get():
             game.max_all_employees_needs()
