@@ -1055,6 +1055,7 @@ def run_gui():
 
     current_page = ["finances"]
     nav_buttons = {}
+    page_switch_callbacks = {}
 
     def switch_page(target: str):
         current_page[0] = target
@@ -1069,6 +1070,9 @@ def run_gui():
                 btn.configure(fg_color=C_CARD_BG, text_color=C_ACCENT, font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"))
             else:
                 btn.configure(fg_color="transparent", text_color=C_TEXT_PRI, font=ctk.CTkFont(family="Segoe UI", size=12))
+
+        if target in page_switch_callbacks:
+            page_switch_callbacks[target]()
 
     lbl_nav = ctk.CTkLabel(sidebar, text="Navigation", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
                            text_color=C_TEXT_MUTED)
@@ -1352,23 +1356,23 @@ def run_gui():
                                 placeholder_text="Search personnel...", textvariable=search_query_var)
     entry_search.pack(side="left", padx=(0, 8))
 
-    def on_search_update(*args):
-        update_roster_view()
-
-    search_query_var.trace_add("write", on_search_update)
-
     ctk.CTkLabel(row_tb_top, text="Team:", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(side="left", padx=(4, 4))
     opt_team = ctk.CTkOptionMenu(row_tb_top, variable=selected_team_filter, height=32, width=140,
                                  font=ctk.CTkFont(family="Segoe UI", size=11),
                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI,
                                  button_color=C_BTN_SEC, button_hover_color=C_BTN_SEC_HOVER,
-                                 values=["All Teams"], command=lambda v: update_roster_view())
+                                 values=["All Teams"])
     opt_team.pack(side="left", padx=(0, 10))
 
-    lbl_emp_count_badge = ctk.CTkLabel(row_tb_top, text="33 Personnel",
+    lbl_emp_count_badge = ctk.CTkLabel(row_tb_top, text="0 Personnel",
                                        font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
                                        fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, corner_radius=4, padx=8, pady=3)
     lbl_emp_count_badge.pack(side="left")
+
+    btn_refresh = ctk.CTkButton(row_tb_top, text="↻ Refresh Roster", width=120, height=32,
+                                font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                                fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER)
+    btn_refresh.pack(side="right")
 
     # Global Batch Actions Row
     row_batch = ctk.CTkFrame(toolbar, fg_color="transparent")
@@ -1376,19 +1380,19 @@ def run_gui():
 
     ctk.CTkButton(row_batch, text="Restore All Needs", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (game.max_all_employees_needs(), show_infobar("Restored needs for all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (game.max_all_employees_needs(), show_infobar("Restored needs for all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
     ctk.CTkButton(row_batch, text="Max All Skills", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (game.max_all_employees_skills(), show_infobar("Maxed base skills for all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (game.max_all_employees_skills(), show_infobar("Maxed base skills for all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
     ctk.CTkButton(row_batch, text="Elevate All Specs (3★)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (game.max_all_employees_specs(3), show_infobar("Elevated specializations to Level 3 for all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (game.max_all_employees_specs(3), show_infobar("Elevated specializations to Level 3 for all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
     ctk.CTkButton(row_batch, text="Remove All Weaknesses", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (show_infobar(f"Removed {game.remove_all_personnel_weaknesses()} weaknesses across company personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (show_infobar(f"Removed {game.remove_all_personnel_weaknesses()} weaknesses across company personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
     ctk.CTkButton(row_batch, text="Free Labor ($0)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
-                  command=lambda: (game.set_all_employees_free_salary(), show_infobar("Assigned $0 salary to all personnel"), update_telemetry())).pack(side="left", expand=True, fill="x", padx=2)
+                  command=lambda: (game.set_all_employees_free_salary(), show_infobar("Assigned $0 salary to all personnel"), refresh_personnel_data())).pack(side="left", expand=True, fill="x", padx=2)
 
     # Master-Detail Split Container
     row_master_detail = ctk.CTkFrame(p_emp, fg_color="transparent")
@@ -1444,6 +1448,12 @@ def run_gui():
     row_ov_actions = ctk.CTkFrame(f_ov, fg_color="transparent")
     row_ov_actions.pack(fill="x", pady=2)
 
+    # Personnel State & Cache
+    cached_employees = []
+    card_widgets = {}
+    spec_btn_cache = {}
+    trait_sw_cache = {}
+
     def on_insp_godmode():
         e = current_selected_emp[0]
         if not e:
@@ -1454,8 +1464,32 @@ def run_gui():
         game.max_employee_specs(e["emp_ptr"], 3)
         game.remove_employee_weaknesses(e["emp_ptr"])
         game.add_employee_spec_exp(e["emp_ptr"], 25.0)
+
+        # Update in-memory state
+        e["energy"] = 1.0
+        e["stress"] = 0.0
+        e["satisfaction"] = 2.0
+        e["creativity"] = 1.0
+        e["hunger"] = 1.0
+        e["social"] = 1.0
+        e["bladder"] = 1.0
+        e["skills"] = [1.0] * 5
+        e["traits_mask"] &= ~GameMemory.BAD_TRAITS_MASK
+        e["weaknesses"] = []
+        for r_idx in range(len(e["spec_exp"])):
+            e["spec_exp"][r_idx] += 25.0
+        for rname in GameMemory.ROLE_NAMES:
+            if rname in e["specs"]:
+                for sk in e["specs"][rname]:
+                    e["specs"][rname][sk] = 3
+
+        select_employee_for_inspector(e, full_rebuild=False)
+        if e["actor_ptr"] in card_widgets:
+            card_widgets[e["actor_ptr"]]["vitals"].configure(
+                text=f"Energy: 100% | Stress: 0% | ${e['salary']:,.0f}",
+                text_color=C_TEXT_SEC
+            )
         show_infobar(f"Restored needs, skills, and removed weaknesses for {e['name']}")
-        update_telemetry()
 
     def on_insp_salary_toggle():
         e = current_selected_emp[0]
@@ -1464,8 +1498,19 @@ def run_gui():
             return
         new_sal = 0.0 if e["salary"] > 0 else 1000.0
         game.set_employee_salary(e["emp_ptr"], new_sal)
+        e["salary"] = new_sal
+        lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${new_sal:,.0f}/mo")
+        entry_sal.delete(0, "end")
+        entry_sal.insert(0, f"{new_sal:.0f}")
+        if e["actor_ptr"] in card_widgets:
+            w_count = len(e["weaknesses"])
+            w_text = f" | {w_count} Weak" if w_count > 0 else ""
+            w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+            card_widgets[e["actor_ptr"]]["vitals"].configure(
+                text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${new_sal:,.0f}{w_text}",
+                text_color=w_col
+            )
         show_infobar(f"Assigned ${new_sal:,.0f} salary to {e['name']}")
-        update_telemetry()
 
     ctk.CTkButton(row_ov_actions, text="Restore Needs & Skills", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_insp_godmode).pack(side="left", expand=True, fill="x", padx=2)
@@ -1505,8 +1550,17 @@ def run_gui():
         try:
             val = float(entry_sal.get().replace(",", "").replace("$", ""))
             game.set_employee_salary(e["emp_ptr"], val)
+            e["salary"] = val
+            lbl_insp_team.configure(text=f"Team: {e['team']} | Salary: ${val:,.0f}/mo")
+            if e["actor_ptr"] in card_widgets:
+                w_count = len(e["weaknesses"])
+                w_text = f" | {w_count} Weak" if w_count > 0 else ""
+                w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+                card_widgets[e["actor_ptr"]]["vitals"].configure(
+                    text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${val:,.0f}{w_text}",
+                    text_color=w_col
+                )
             show_infobar(f"Assigned ${val:,.0f} salary to {e['name']}")
-            update_telemetry()
         except ValueError:
             show_infobar("Invalid numerical amount entered", is_success=False)
 
@@ -1534,7 +1588,16 @@ def run_gui():
             lv.configure(text=f"{pct}%")
             e = current_selected_emp[0]
             if e:
+                e[k] = val
                 game.set_employee_need(e["emp_ptr"], k, val)
+                if k in ("energy", "stress") and e["actor_ptr"] in card_widgets:
+                    w_count = len(e["weaknesses"])
+                    w_text = f" | {w_count} Weak" if w_count > 0 else ""
+                    w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+                    card_widgets[e["actor_ptr"]]["vitals"].configure(
+                        text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}{w_text}",
+                        text_color=w_col
+                    )
 
         sl = ctk.CTkSlider(c, from_=0.0, to=max_val, command=on_slide, progress_color=C_ACCENT, height=14)
         sl.pack(fill="x", padx=10, pady=(2, 6))
@@ -1570,6 +1633,8 @@ def run_gui():
             lv.configure(text=f"{pct}%")
             e = current_selected_emp[0]
             if e:
+                if idx < len(e["skills"]):
+                    e["skills"][idx] = val
                 game.set_employee_skill(e["emp_ptr"], idx, val)
 
         sl_sk = ctk.CTkSlider(c_sk, from_=0.0, to=1.0, command=on_skill_slide, progress_color=C_ACCENT, height=14)
@@ -1595,9 +1660,13 @@ def run_gui():
                 e = current_selected_emp[0]
                 if e:
                     cur = e["spec_exp"][idx] if idx < len(e["spec_exp"]) else 0.0
-                    game.set_employee_spec_exp(e["emp_ptr"], idx, cur + delta)
+                    new_val = cur + delta
+                    game.set_employee_spec_exp(e["emp_ptr"], idx, new_val)
+                    if idx < len(e["spec_exp"]):
+                        e["spec_exp"][idx] = new_val
+                    used = e["spec_used"][idx] if idx < len(e["spec_used"]) else 0
+                    exp_labels[idx].configure(text=f"Points: {new_val:.1f} (Used: {used})")
                     show_infobar(f"Added +{delta:g} EXP to {GameMemory.ROLE_NAMES[idx]}")
-                    update_telemetry()
             return handler
 
         ctk.CTkButton(row_btns, text="+5 EXP", height=24, font=ctk.CTkFont(family="Segoe UI", size=9), fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_exp_adder(r_idx, 5.0)).pack(side="left", expand=True, fill="x", padx=1)
@@ -1615,8 +1684,16 @@ def run_gui():
         e = current_selected_emp[0]
         if e:
             cnt = game.max_employee_specs(e["emp_ptr"], 3)
+            for rname in GameMemory.ROLE_NAMES:
+                if rname in e["specs"]:
+                    for sk in e["specs"][rname]:
+                        e["specs"][rname][sk] = 3
+            for (ridx, skey), btns in spec_btn_cache.items():
+                for s_star, b in btns.items():
+                    is_active = (s_star == 3)
+                    b.configure(fg_color=C_ACCENT if is_active else C_BTN_SEC,
+                                text_color=C_ACCENT_TEXT if is_active else C_TEXT_PRI)
             show_infobar(f"Elevated {cnt} specializations to Level 3 for {e['name']}")
-            update_telemetry()
 
     ctk.CTkButton(row_sp_top, text="Elevate All to 3★", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_elevate_selected_specs).pack(side="right")
@@ -1634,15 +1711,32 @@ def run_gui():
         e = current_selected_emp[0]
         if e:
             rem = game.remove_employee_weaknesses(e["emp_ptr"])
+            e["traits_mask"] &= ~GameMemory.BAD_TRAITS_MASK
+            e["weaknesses"] = []
+            for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
+                if is_bad and tname in trait_sw_cache:
+                    trait_sw_cache[tname][0].set(False)
+            lbl_ov_bads.configure(text="Weaknesses: None (Clear)", text_color=C_SUCCESS)
+            if e["actor_ptr"] in card_widgets:
+                card_widgets[e["actor_ptr"]]["vitals"].configure(
+                    text=f"Energy: {e['energy']*100:.0f}% | Stress: {e['stress']*100:.0f}% | ${e['salary']:,.0f}",
+                    text_color=C_TEXT_SEC
+                )
             show_infobar(f"Removed {rem} weaknesses from {e['name']}")
-            update_telemetry()
 
     def on_grant_master_traits():
         e = current_selected_emp[0]
         if e:
             game.grant_master_traits(e["emp_ptr"])
+            e["traits_mask"] = game.read_u64(e["emp_ptr"] + 0x150)
+            e["goods"] = [t[0] for t in GameMemory.ALL_TRAITS if not t[2] and (e["traits_mask"] & t[1])]
+            e["weaknesses"] = [t[0] for t in GameMemory.ALL_TRAITS if t[2] and (e["traits_mask"] & t[1])]
+            for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
+                if tname in trait_sw_cache:
+                    trait_sw_cache[tname][0].set(bool(e["traits_mask"] & tbit))
+            goods_txt = ", ".join(e["goods"]) if e["goods"] else "None"
+            lbl_ov_goods.configure(text=f"Good Traits: {goods_txt}")
             show_infobar(f"Granted master positive traits to {e['name']}")
-            update_telemetry()
 
     ctk.CTkButton(row_tr_top, text="Remove Weaknesses", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=on_strip_selected_weaknesses).pack(side="left", expand=True, fill="x", padx=2)
@@ -1653,8 +1747,123 @@ def run_gui():
     frame_traits_checklist = ctk.CTkFrame(f_traits, fg_color="transparent")
     frame_traits_checklist.pack(fill="both", expand=True)
 
+    # Rebuilding grids on demand (only when selecting a new employee)
+    def rebuild_specs_grid(e: dict):
+        for w in frame_specs_grid.winfo_children():
+            w.destroy()
+        spec_btn_cache.clear()
+
+        has_specs = False
+        for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
+            specs = e["specs"].get(rname, {})
+            if specs:
+                has_specs = True
+                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(4, 2))
+                for spec_key, cur_lvl in specs.items():
+                    row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+                    row_s.pack(fill="x", pady=2, ipady=2)
+                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
+
+                    row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
+                    row_stars.pack(side="right", padx=6)
+
+                    spec_btn_cache[(r_idx, spec_key)] = {}
+
+                    for target_star in [0, 1, 2, 3]:
+                        is_active = (cur_lvl == target_star)
+                        b_col = C_ACCENT if is_active else C_BTN_SEC
+                        t_col = C_ACCENT_TEXT if is_active else C_TEXT_PRI
+                        btn_label = f"{target_star}★"
+
+                        def make_spec_setter(ridx=r_idx, skey=spec_key, tlvl=target_star):
+                            def handler():
+                                emp = current_selected_emp[0]
+                                if emp:
+                                    game.set_employee_spec_level(emp["emp_ptr"], ridx, skey, tlvl)
+                                    emp["specs"].setdefault(GameMemory.ROLE_NAMES[ridx], {})[skey] = tlvl
+                                    btns = spec_btn_cache.get((ridx, skey), {})
+                                    for s_idx, b in btns.items():
+                                        is_act = (s_idx == tlvl)
+                                        b.configure(fg_color=C_ACCENT if is_act else C_BTN_SEC,
+                                                    text_color=C_ACCENT_TEXT if is_act else C_TEXT_PRI)
+                                    show_infobar(f"Set {skey} to {tlvl}★ for {emp['name']}")
+                            return handler
+
+                        b = ctk.CTkButton(row_stars, text=btn_label, width=32, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                                          fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter())
+                        b.pack(side="left", padx=1)
+                        spec_btn_cache[(r_idx, spec_key)][target_star] = b
+
+        if not has_specs:
+            ctk.CTkLabel(frame_specs_grid, text="No active specializations to adjust.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
+
+    def rebuild_traits_grid(e: dict):
+        for w in frame_traits_checklist.winfo_children():
+            w.destroy()
+        trait_sw_cache.clear()
+
+        for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
+            is_enabled = bool(e["traits_mask"] & tbit)
+            row_tr = ctk.CTkFrame(frame_traits_checklist, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+            row_tr.pack(fill="x", pady=1, ipady=1)
+
+            type_tag = "[Weakness] " if is_bad else ""
+            t_col = C_ERROR if is_bad else C_TEXT_PRI
+            lbl_tr = ctk.CTkLabel(row_tr, text=f"{type_tag}{tname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold" if is_bad else "normal"), text_color=t_col)
+            lbl_tr.pack(side="left", padx=8)
+
+            var_tr = ctk.BooleanVar(value=is_enabled)
+
+            def make_tr_toggler(t_name=tname, v=var_tr, bit=tbit, bad=is_bad):
+                def handler():
+                    emp = current_selected_emp[0]
+                    if emp:
+                        new_val = v.get()
+                        game.set_employee_trait_toggle(emp["emp_ptr"], t_name, new_val)
+                        if new_val:
+                            emp["traits_mask"] |= bit
+                        else:
+                            emp["traits_mask"] &= ~bit
+
+                        emp["goods"] = [t[0] for t in GameMemory.ALL_TRAITS if not t[2] and (emp["traits_mask"] & t[1])]
+                        emp["weaknesses"] = [t[0] for t in GameMemory.ALL_TRAITS if t[2] and (emp["traits_mask"] & t[1])]
+
+                        goods_txt = ", ".join(emp["goods"]) if emp["goods"] else "None"
+                        bads_txt = ", ".join(emp["weaknesses"]) if emp["weaknesses"] else "None (Clear)"
+                        lbl_ov_goods.configure(text=f"Good Traits: {goods_txt}")
+                        lbl_ov_bads.configure(text=f"Weaknesses: {bads_txt}", text_color=C_ERROR if emp["weaknesses"] else C_SUCCESS)
+
+                        if emp["actor_ptr"] in card_widgets:
+                            w_count = len(emp["weaknesses"])
+                            w_text = f" | {w_count} Weak" if w_count > 0 else ""
+                            w_col = C_ERROR if w_count > 0 else C_TEXT_SEC
+                            card_widgets[emp["actor_ptr"]]["vitals"].configure(
+                                text=f"Energy: {emp['energy']*100:.0f}% | Stress: {emp['stress']*100:.0f}% | ${emp['salary']:,.0f}{w_text}",
+                                text_color=w_col
+                            )
+                return handler
+
+            sw = ctk.CTkSwitch(row_tr, text="", variable=var_tr, command=make_tr_toggler(), progress_color=C_ERROR if is_bad else C_ACCENT, width=36)
+            sw.pack(side="right", padx=6)
+            trait_sw_cache[tname] = (var_tr, sw)
+
+    def reset_inspector_view():
+        lbl_insp_name.configure(text="Select an employee")
+        lbl_insp_team.configure(text="Team: N/A | Salary: $0")
+        lbl_ov_v1.configure(text="Energy: 100% | Stress: 0%")
+        lbl_ov_v2.configure(text="Satisfaction: 100% | Creativity: 100%")
+        lbl_ov_goods.configure(text="Good Traits: None")
+        lbl_ov_bads.configure(text="Weaknesses: None (Clear)", text_color=C_SUCCESS)
+        entry_sal.delete(0, "end")
+        for w in frame_specs_grid.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(frame_specs_grid, text="Select an employee to view specializations.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
+        for w in frame_traits_checklist.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(frame_traits_checklist, text="Select an employee to view traits.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
+
     # Function to update all inspector widgets when an employee is selected
-    def select_employee_for_inspector(e: dict):
+    def select_employee_for_inspector(e: dict, full_rebuild: bool = True):
         current_selected_emp[0] = e
         tag = " [Founder]" if e["founder"] else ""
         lbl_insp_name.configure(text=f"{e['name']}{tag}")
@@ -1668,8 +1877,10 @@ def run_gui():
         bads_txt = ", ".join(e["weaknesses"]) if e["weaknesses"] else "None (Clear)"
         lbl_ov_goods.configure(text=f"Good Traits: {goods_txt}")
         lbl_ov_bads.configure(text=f"Weaknesses: {bads_txt}", text_color=C_ERROR if e["weaknesses"] else C_SUCCESS)
-        entry_sal.delete(0, "end")
-        entry_sal.insert(0, f"{e['salary']:.0f}")
+
+        if full_rebuild:
+            entry_sal.delete(0, "end")
+            entry_sal.insert(0, f"{e['salary']:.0f}")
 
         # Needs Sliders
         for k, sl in needs_sliders.items():
@@ -1692,79 +1903,39 @@ def run_gui():
             used = e["spec_used"][r_idx] if r_idx < len(e["spec_used"]) else 0
             lbl.configure(text=f"Points: {val:.1f} (Used: {used})")
 
-        # Granular Specs Grid
-        for w in frame_specs_grid.winfo_children():
-            w.destroy()
+        # Rebuild or sync grids in-place
+        if full_rebuild:
+            rebuild_specs_grid(e)
+            rebuild_traits_grid(e)
+        else:
+            for (ridx, skey), btns in spec_btn_cache.items():
+                cur_lvl = e["specs"].get(GameMemory.ROLE_NAMES[ridx], {}).get(skey, 0)
+                for s_star, b in btns.items():
+                    is_active = (s_star == cur_lvl)
+                    b.configure(fg_color=C_ACCENT if is_active else C_BTN_SEC,
+                                text_color=C_ACCENT_TEXT if is_active else C_TEXT_PRI)
+            for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
+                if tname in trait_sw_cache:
+                    trait_sw_cache[tname][0].set(bool(e["traits_mask"] & tbit))
 
-        has_specs = False
-        for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
-            specs = e["specs"].get(rname, {})
-            if specs:
-                has_specs = True
-                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(4, 2))
-                for spec_key, cur_lvl in specs.items():
-                    row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-                    row_s.pack(fill="x", pady=2, ipady=2)
-                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
+    def on_employee_card_clicked(emp_data: dict):
+        old_emp = current_selected_emp[0]
+        # In-place styling update for selected card without rebuilding
+        if old_emp and old_emp["actor_ptr"] in card_widgets:
+            card_widgets[old_emp["actor_ptr"]]["card"].configure(fg_color=C_CARD_BG, border_color=C_BORDER_SUBTLE)
 
-                    # Star level buttons: 0, 1, 2, 3
-                    row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
-                    row_stars.pack(side="right", padx=6)
+        if emp_data["actor_ptr"] in card_widgets:
+            card_widgets[emp_data["actor_ptr"]]["card"].configure(fg_color=C_CARD_ALT, border_color=C_ACCENT)
 
-                    for target_star in [0, 1, 2, 3]:
-                        is_active = (cur_lvl == target_star)
-                        b_col = C_ACCENT if is_active else C_BTN_SEC
-                        t_col = C_ACCENT_TEXT if is_active else C_TEXT_PRI
-                        btn_label = f"{target_star}★"
+        is_new = (old_emp is None or old_emp["actor_ptr"] != emp_data["actor_ptr"])
+        select_employee_for_inspector(emp_data, full_rebuild=is_new)
 
-                        def make_spec_setter(ridx=r_idx, skey=spec_key, tlvl=target_star):
-                            def handler():
-                                emp = current_selected_emp[0]
-                                if emp:
-                                    game.set_employee_spec_level(emp["emp_ptr"], ridx, skey, tlvl)
-                                    update_telemetry()
-                            return handler
-
-                        ctk.CTkButton(row_stars, text=btn_label, width=32, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
-                                      fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter()).pack(side="left", padx=1)
-
-        if not has_specs:
-            ctk.CTkLabel(frame_specs_grid, text="No active specializations to adjust.", font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_MUTED).pack(pady=10)
-
-        # Traits Checklist
-        for w in frame_traits_checklist.winfo_children():
-            w.destroy()
-
-        for tname, tbit, is_bad in GameMemory.ALL_TRAITS:
-            is_enabled = bool(e["traits_mask"] & tbit)
-            row_tr = ctk.CTkFrame(frame_traits_checklist, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-            row_tr.pack(fill="x", pady=1, ipady=1)
-
-            type_tag = "[Weakness] " if is_bad else ""
-            t_col = C_ERROR if is_bad else C_TEXT_PRI
-            lbl_tr = ctk.CTkLabel(row_tr, text=f"{type_tag}{tname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold" if is_bad else "normal"), text_color=t_col)
-            lbl_tr.pack(side="left", padx=8)
-
-            var_tr = ctk.BooleanVar(value=is_enabled)
-
-            def make_tr_toggler(t_name=tname, v=var_tr):
-                def handler():
-                    emp = current_selected_emp[0]
-                    if emp:
-                        game.set_employee_trait_toggle(emp["emp_ptr"], t_name, v.get())
-                        update_telemetry()
-                return handler
-
-            sw = ctk.CTkSwitch(row_tr, text="", variable=var_tr, command=make_tr_toggler(), progress_color=C_ERROR if is_bad else C_ACCENT, width=36)
-            sw.pack(side="right", padx=6)
-
-    def update_roster_view():
-        emps = game.get_employees()
+    def render_roster_list():
         q = search_query_var.get().strip().lower()
         t_filter = selected_team_filter.get()
 
         filtered = []
-        for e in emps:
+        for e in cached_employees:
             if t_filter != "All Teams" and e["team"] != t_filter:
                 continue
             if q and (q not in e["name"].lower() and q not in e["team"].lower()):
@@ -1773,13 +1944,14 @@ def run_gui():
 
         for w in frame_roster.winfo_children():
             w.destroy()
+        card_widgets.clear()
 
         if not filtered:
             ctk.CTkLabel(frame_roster, text="No matching personnel found.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=20)
             return
 
         for e in filtered:
-            is_sel = current_selected_emp[0] and current_selected_emp[0]["actor_ptr"] == e["actor_ptr"]
+            is_sel = (current_selected_emp[0] is not None and current_selected_emp[0]["actor_ptr"] == e["actor_ptr"])
             bg_col = C_CARD_ALT if is_sel else C_CARD_BG
             border_col = C_ACCENT if is_sel else C_BORDER_SUBTLE
 
@@ -1805,16 +1977,55 @@ def run_gui():
                                       font=ctk.CTkFont(family="Segoe UI", size=10), text_color=w_col)
             lbl_vitals.pack(side="right")
 
+            card_widgets[e["actor_ptr"]] = {
+                "card": card,
+                "vitals": lbl_vitals,
+                "data": e
+            }
+
             def make_click_handler(emp_data=e):
                 def handler(event=None):
-                    select_employee_for_inspector(emp_data)
-                    update_roster_view()
+                    on_employee_card_clicked(emp_data)
                 return handler
 
             card.bind("<Button-1>", make_click_handler())
             row_c.bind("<Button-1>", make_click_handler())
             lbl_name.bind("<Button-1>", make_click_handler())
             lbl_vitals.bind("<Button-1>", make_click_handler())
+
+    def refresh_personnel_data(show_message: bool = False):
+        if not game.is_attached():
+            return
+        emps = game.get_employees()
+        cached_employees.clear()
+        cached_employees.extend(emps)
+
+        lbl_emp_count_badge.configure(text=f"{len(emps)} Personnel")
+        teams_set = sorted(list({e["team"] for e in emps if e["team"]}))
+        all_options = ["All Teams"] + teams_set
+        if opt_team.cget("values") != all_options:
+            opt_team.configure(values=all_options)
+
+        render_roster_list()
+
+        if current_selected_emp[0]:
+            found = False
+            for e in emps:
+                if e["actor_ptr"] == current_selected_emp[0]["actor_ptr"]:
+                    select_employee_for_inspector(e, full_rebuild=False)
+                    found = True
+                    break
+            if not found:
+                current_selected_emp[0] = None
+                reset_inspector_view()
+
+        if show_message:
+            show_infobar(f"Loaded {len(emps)} personnel from game memory")
+
+    btn_refresh.configure(command=lambda: refresh_personnel_data(show_message=True))
+    opt_team.configure(command=lambda v: render_roster_list())
+    search_query_var.trace_add("write", lambda *args: render_roster_list())
+    page_switch_callbacks["personnel"] = lambda: (not cached_employees and refresh_personnel_data())
 
     # =========================================================
     # PAGE 4: WORLD & RULES
@@ -1959,44 +2170,29 @@ def run_gui():
         yr = 1900 + dt["year"] if dt["year"] < 1000 else dt["year"]
         lbl_calendar.configure(text=f"Calendar: {m_str} {yr} - {dt['hour']:02d}:00")
 
-        # Founder Profile Updates
-        founder = game.get_founder()
-        if founder:
-            lbl_fnd_name.configure(text=f"{founder['name']} (CEO)")
-            lbl_fnd_sub.configure(text=f"Team: {founder['team']} | Salary: ${founder['salary']:,.0f}/mo | Skill Ceiling: {founder['skill_ceiling']*100:.0f}%")
-            lbl_f_energy.configure(text=f"Energy: {founder['energy']*100:.0f}%")
-            bar_f_energy.set(max(0.0, min(1.0, founder['energy'])))
-            lbl_f_stress.configure(text=f"Stress: {founder['stress']*100:.0f}%")
-            bar_f_stress.set(max(0.0, min(1.0, founder['stress'])))
-            lbl_f_sat.configure(text=f"Satisfaction: {founder['satisfaction']*100:.0f}%")
-            bar_f_sat.set(max(0.0, min(1.0, founder['satisfaction'] / 2.0)))
-            lbl_f_creativity.configure(text=f"Creativity: {founder['creativity']*100:.0f}%")
-            bar_f_creativity.set(max(0.0, min(1.0, founder['creativity'])))
+        # Founder Profile Updates (Only updated when Founder tab is active)
+        if current_page[0] == "founder":
+            founder = game.get_founder()
+            if founder:
+                lbl_fnd_name.configure(text=f"{founder['name']} (CEO)")
+                lbl_fnd_sub.configure(text=f"Team: {founder['team']} | Salary: ${founder['salary']:,.0f}/mo | Skill Ceiling: {founder['skill_ceiling']*100:.0f}%")
+                lbl_f_energy.configure(text=f"Energy: {founder['energy']*100:.0f}%")
+                bar_f_energy.set(max(0.0, min(1.0, founder['energy'])))
+                lbl_f_stress.configure(text=f"Stress: {founder['stress']*100:.0f}%")
+                bar_f_stress.set(max(0.0, min(1.0, founder['stress'])))
+                lbl_f_sat.configure(text=f"Satisfaction: {founder['satisfaction']*100:.0f}%")
+                bar_f_sat.set(max(0.0, min(1.0, founder['satisfaction'] / 2.0)))
+                lbl_f_creativity.configure(text=f"Creativity: {founder['creativity']*100:.0f}%")
+                bar_f_creativity.set(max(0.0, min(1.0, founder['creativity'])))
 
-            for r_idx, r_name in enumerate(GameMemory.ROLE_NAMES):
-                bskill = f"{founder['skills'][r_idx]*100:.0f}%" if r_idx < len(founder['skills']) else "0%"
-                specs = founder["specs"].get(r_name, {})
-                specs_desc = ", ".join([f"{k} (Lvl {lvl})" for k, lvl in specs.items()]) if specs else "No active specializations"
-                if r_name in f_role_widgets:
-                    lbl_t, lbl_s = f_role_widgets[r_name]
-                    lbl_t.configure(text=f"{r_name} (Base Skill: {bskill})")
-                    lbl_s.configure(text=specs_desc)
-
-        # Team Filter Options
-        emps = game.get_employees()
-        lbl_emp_count_badge.configure(text=f"{len(emps)} Personnel")
-        teams_set = sorted(list({e["team"] for e in emps if e["team"]}))
-        all_options = ["All Teams"] + teams_set
-        if opt_team.cget("values") != all_options:
-            opt_team.configure(values=all_options)
-
-        update_roster_view()
-
-        if current_selected_emp[0]:
-            for e in emps:
-                if e["actor_ptr"] == current_selected_emp[0]["actor_ptr"]:
-                    select_employee_for_inspector(e)
-                    break
+                for r_idx, r_name in enumerate(GameMemory.ROLE_NAMES):
+                    bskill = f"{founder['skills'][r_idx]*100:.0f}%" if r_idx < len(founder['skills']) else "0%"
+                    specs = founder["specs"].get(r_name, {})
+                    specs_desc = ", ".join([f"{k} (Lvl {lvl})" for k, lvl in specs.items()]) if specs else "No active specializations"
+                    if r_name in f_role_widgets:
+                        lbl_t, lbl_s = f_role_widgets[r_name]
+                        lbl_t.configure(text=f"{r_name} (Base Skill: {bskill})")
+                        lbl_s.configure(text=specs_desc)
 
         if freeze_needs_var.get():
             game.max_all_employees_needs()

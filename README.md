@@ -14,6 +14,8 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 
 ### 👤 Deep Personnel & Staff Inspector
 Select any employee or facility staff member in the live roster to open the comprehensive 5-tab inspector:
+* **Zero-Lag Architecture**: Event-driven roster caching with instant in-place card selection. The roster never flickers or resets scroll positions.
+* **On-Demand Memory Sync**: Includes a dedicated **↻ Refresh Roster** button and automatic sync on tab switch or batch actions.
 
 * **Tab 1: Overview**
   * Live status pill (Founder / Employee, Team assignment, Current Vitals summary).
