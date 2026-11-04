@@ -1974,6 +1974,14 @@ def run_gui():
     frame_traits_checklist = ctk.CTkFrame(f_traits, fg_color="transparent")
     frame_traits_checklist.pack(fill="both", expand=True)
 
+    ROLE_ALL_SPECIALIZATIONS = {
+        "Lead": ["Automation", "HR", "Multitasking", "Socialization"],
+        "Code": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
+        "Design": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
+        "Art": ["2D", "3D", "Audio"],
+        "Service": ["Accounting", "Law", "Marketing", "Support"],
+    }
+
     # Rebuilding grids on demand (only when selecting a new employee)
     def rebuild_specs_grid(e: dict):
         for w in frame_specs_grid.winfo_children():
@@ -1983,12 +1991,17 @@ def run_gui():
         total_active_subfields = 0
         for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
             specs = e["specs"].get(rname, {})
-            if specs:
-                total_active_subfields += len(specs)
-                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname} Specializations", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(6, 2))
-                for spec_key, cur_lvl in specs.items():
-                    row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-                    row_s.pack(fill="x", pady=2, ipady=2)
+            all_fields = ROLE_ALL_SPECIALIZATIONS.get(rname, [])
+
+            ctk.CTkLabel(frame_specs_grid, text=f"■ {rname} Specializations", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(6, 2))
+
+            for spec_key in all_fields:
+                row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+                row_s.pack(fill="x", pady=2, ipady=2)
+
+                if spec_key in specs:
+                    total_active_subfields += 1
+                    cur_lvl = specs[spec_key]
                     ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
 
                     row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
@@ -2020,17 +2033,17 @@ def run_gui():
                                           fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter())
                         b.pack(side="left", padx=1)
                         spec_btn_cache[(r_idx, spec_key)][target_star] = b
-            else:
-                row_un = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-                row_un.pack(fill="x", pady=1, ipady=1)
-                ctk.CTkLabel(row_un, text=f"{rname}: No active subfields unlocked yet", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_MUTED).pack(side="left", padx=8)
+                else:
+                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC).pack(side="left", padx=8)
+                    lbl_locked = ctk.CTkLabel(row_s, text="Locked (Unassigned in save)", font=ctk.CTkFont(family="Segoe UI", size=9),
+                                              fg_color=C_BTN_SEC, text_color=C_TEXT_MUTED, corner_radius=4, padx=6, pady=1)
+                    lbl_locked.pack(side="right", padx=6)
 
-        if total_active_subfields == 0:
-            c_empty = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
-            c_empty.pack(fill="x", pady=12, padx=4, ipady=8)
-            ctk.CTkLabel(c_empty, text="No Active Specializations Initialized", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(padx=10, pady=(4, 2))
-            ctk.CTkLabel(c_empty, text="This employee has not selected or trained specialization fields in-game yet.\n\n• Use '+10 Pts (All)' above or the 'Skills & Points' tab to give unspent points to spend in-game.\n• Or click 'Elevate All to 3★' above to immediately unlock and maximize all fields.",
-                         font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC, justify="left", wraplength=360).pack(padx=10, pady=(2, 6))
+        c_tip = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+        c_tip.pack(fill="x", pady=(10, 4), padx=2, ipady=4)
+        ctk.CTkLabel(c_tip, text="💡 Unlocking Missing Fields (e.g. 3D, Network)", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=10, pady=(4, 2))
+        ctk.CTkLabel(c_tip, text="In Software Inc., employees only unlock specialized disciplines once they take an education course or assign points in-game.\n\n1. Grant points via 'Skills & Points' tab (or '+10 Pts' above).\n2. In-game, open this employee's character sheet and spend 1 point on 3D or Network.\n3. Return here and click '↻ Refresh Roster' — the star buttons will activate immediately for instant 3★ promotion!",
+                     font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_SEC, justify="left", wraplength=370).pack(anchor="w", padx=10, pady=(2, 6))
 
     def rebuild_traits_grid(e: dict):
         for w in frame_traits_checklist.winfo_children():
