@@ -50,11 +50,28 @@ psapi.GetModuleBaseNameA.argtypes = [
     ctypes.c_uint
 ]
 
+k32.VirtualAllocEx.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_void_p,
+    ctypes.c_size_t,
+    ctypes.c_uint32,
+    ctypes.c_uint32,
+]
+k32.VirtualAllocEx.restype = ctypes.c_void_p
+
 
 class GameMemory:
     """Handles external memory discovery and safe read/write operations for Software Inc."""
 
     ROLE_NAMES = ["Lead", "Code", "Design", "Art", "Service"]
+
+    ROLE_ALL_SPECIALIZATIONS = {
+        "Lead": ["Automation", "HR", "Multitasking", "Socialization"],
+        "Code": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
+        "Design": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
+        "Art": ["2D", "3D", "Audio"],
+        "Service": ["Accounting", "Law", "Marketing", "Support"],
+    }
 
     # Complete enum mapping of all 33 traits in Software Inc.
     ALL_TRAITS = [
@@ -110,6 +127,11 @@ class GameMemory:
         self.actor_manager = 0
         self.time_of_day_instance = 0
 
+        # Specialization insertion cache
+        self._spec_metadata = {}
+        self._v_buckets = 0
+        self._v_entries = 0
+
     def is_attached(self) -> bool:
         if not self.handle or not self.pid:
             return False
@@ -123,6 +145,9 @@ class GameMemory:
             k32.CloseHandle(self.handle)
             self.handle = None
         self.pid = None
+        self._spec_metadata.clear()
+        self._v_buckets = 0
+        self._v_entries = 0
 
     def read_ptr(self, addr: int) -> int:
         if not addr or not self.handle:
@@ -710,49 +735,140 @@ class GameMemory:
             self.write_u32(used_arr + 0x20 + r * 4, 0)
         return True
 
+    def _ensure_spec_metadata(self) -> bool:
+        """Scan process memory across all employees to find canonical string pointers and Mono vtables."""
+        if len(self._spec_metadata) >= 15 and self._v_buckets and self._v_entries:
+            return True
+        emps = self.get_employees()
+        for e in emps:
+            spec_arr = self.read_ptr(e["emp_ptr"] + 0x18)
+            if not spec_arr:
+                continue
+            for r in range(5):
+                d_ptr = self.read_ptr(spec_arr + 0x20 + r * 8)
+                if not d_ptr:
+                    continue
+                b = self.read_ptr(d_ptr + 0x10)
+                ent = self.read_ptr(d_ptr + 0x18)
+                if b and not self._v_buckets:
+                    self._v_buckets = self.read_ptr(b)
+                if ent and not self._v_entries:
+                    self._v_entries = self.read_ptr(ent)
+                if ent:
+                    cap = self.read_u32(ent + 0x18)
+                    for k in range(cap):
+                        ea = ent + 0x20 + k * 24
+                        kp = self.read_ptr(ea + 8)
+                        if kp:
+                            s = self.read_str_net(kp)
+                            h = self.read_u32(ea)
+                            if s:
+                                self._spec_metadata[s.lower()] = (kp, h)
+            if len(self._spec_metadata) >= 15 and self._v_buckets and self._v_entries:
+                break
+        return len(self._spec_metadata) > 0
+
     def set_employee_spec_level(self, emp_ptr: int, role_idx: int, spec_key: str, target_level: int) -> bool:
-        if not emp_ptr or role_idx < 0 or role_idx >= 5:
+        if not emp_ptr or role_idx < 0 or role_idx >= 5 or not self.handle:
             return False
+        if not self._ensure_spec_metadata():
+            return False
+
+        key_low = spec_key.lower()
+        if key_low not in self._spec_metadata:
+            return False
+        k_ptr, hash_code = self._spec_metadata[key_low]
+
         spec_levels_arr = self.read_ptr(emp_ptr + 0x18)
         if not spec_levels_arr:
             return False
         dict_ptr = self.read_ptr(spec_levels_arr + 0x20 + role_idx * 8)
         if not dict_ptr:
             return False
+
         d_entries = self.read_ptr(dict_ptr + 0x18)
-        if not d_entries:
+        d_buckets = self.read_ptr(dict_ptr + 0x10)
+        count = self.read_u32(dict_ptr + 0x40)
+
+        # 1. Update existing entry if already present
+        if d_entries:
+            cap = self.read_u32(d_entries + 0x18)
+            for k in range(cap):
+                ea = d_entries + 0x20 + k * 24
+                kp = self.read_ptr(ea + 8)
+                if kp:
+                    if self.read_str_net(kp).lower() == key_low:
+                        return self.write_u32(ea + 16, int(target_level))
+
+        # 2. Key does not exist: ensure capacity or allocate initial dictionary tables
+        if not self._v_buckets or not self._v_entries:
             return False
-        d_cap = self.read_u32(d_entries + 0x18)
-        for k in range(d_cap):
-            e_addr = d_entries + 0x20 + k * 24
-            k_ptr = self.read_ptr(e_addr + 8)
-            if k_ptr:
-                key_name = self.read_str_net(k_ptr)
-                if key_name.lower() == spec_key.lower():
-                    return self.write_u32(e_addr + 16, int(target_level))
-        return False
+
+        cur_cap = self.read_u32(d_entries + 0x18) if d_entries else 0
+        if not d_entries or not d_buckets or count >= cur_cap:
+            new_cap = 7 if cur_cap < 7 else 11
+            b_size = 0x20 + new_cap * 4
+            new_b_ptr = k32.VirtualAllocEx(self.handle, None, b_size, 0x1000 | 0x2000, 0x04)
+            if not new_b_ptr:
+                return False
+            self.write_u64(new_b_ptr, self._v_buckets)
+            self.write_u32(new_b_ptr + 0x18, new_cap)
+            for i in range(new_cap):
+                self.write_u32(new_b_ptr + 0x20 + i * 4, 0xFFFFFFFF)
+
+            e_size = 0x20 + new_cap * 24
+            new_e_ptr = k32.VirtualAllocEx(self.handle, None, e_size, 0x1000 | 0x2000, 0x04)
+            if not new_e_ptr:
+                return False
+            self.write_u64(new_e_ptr, self._v_entries)
+            self.write_u32(new_e_ptr + 0x18, new_cap)
+
+            # Rehash existing entries into new buckets
+            if d_entries and count > 0:
+                for i in range(count):
+                    old_ea = d_entries + 0x20 + i * 24
+                    h = self.read_u32(old_ea)
+                    old_kp = self.read_ptr(old_ea + 8)
+                    val = self.read_u32(old_ea + 16)
+                    tb = (h & 0x7FFFFFFF) % new_cap
+                    cur_b_val = self.read_u32(new_b_ptr + 0x20 + tb * 4)
+                    new_ea = new_e_ptr + 0x20 + i * 24
+                    self.write_u32(new_ea, h)
+                    self.write_u32(new_ea + 4, cur_b_val)
+                    self.write_u64(new_ea + 8, old_kp)
+                    self.write_u32(new_ea + 16, val)
+                    self.write_u32(new_b_ptr + 0x20 + tb * 4, i)
+
+            self.write_u64(dict_ptr + 0x10, new_b_ptr)
+            self.write_u64(dict_ptr + 0x18, new_e_ptr)
+            d_buckets = new_b_ptr
+            d_entries = new_e_ptr
+            cur_cap = new_cap
+
+        # 3. Insert new entry at index `count`
+        insert_idx = count
+        target_bucket = (hash_code & 0x7FFFFFFF) % cur_cap
+        cur_bucket_val = self.read_u32(d_buckets + 0x20 + target_bucket * 4)
+
+        ea = d_entries + 0x20 + insert_idx * 24
+        self.write_u32(ea, hash_code)
+        self.write_u32(ea + 4, cur_bucket_val)
+        self.write_u64(ea + 8, k_ptr)
+        self.write_u32(ea + 16, int(target_level))
+
+        self.write_u32(d_buckets + 0x20 + target_bucket * 4, insert_idx)
+        self.write_u32(dict_ptr + 0x40, count + 1)
+        self.write_u32(dict_ptr + 0x44, self.read_u32(dict_ptr + 0x44) + 1)
+        return True
 
     def max_employee_specs(self, emp_ptr: int, target_level: int = 3) -> int:
         if not emp_ptr:
             return 0
-        spec_levels_arr = self.read_ptr(emp_ptr + 0x18)
-        if not spec_levels_arr:
-            return 0
-        levels_len = self.read_u32(spec_levels_arr + 0x18)
         modified = 0
-        for role_idx in range(min(levels_len, 5)):
-            dict_ptr = self.read_ptr(spec_levels_arr + 0x20 + role_idx * 8)
-            if not dict_ptr:
-                continue
-            d_entries = self.read_ptr(dict_ptr + 0x18)
-            if not d_entries:
-                continue
-            d_cap = self.read_u32(d_entries + 0x18)
-            for k in range(d_cap):
-                e_addr = d_entries + 0x20 + k * 24
-                k_ptr = self.read_ptr(e_addr + 8)
-                if k_ptr:
-                    self.write_u32(e_addr + 16, int(target_level))
+        for role_idx, role_name in enumerate(self.ROLE_NAMES):
+            subfields = self.ROLE_ALL_SPECIALIZATIONS.get(role_name, [])
+            for spec_key in subfields:
+                if self.set_employee_spec_level(emp_ptr, role_idx, spec_key, target_level):
                     modified += 1
         return modified
 
@@ -1901,15 +2017,15 @@ def run_gui():
         if e:
             cnt = game.max_employee_specs(e["emp_ptr"], 3)
             for rname in GameMemory.ROLE_NAMES:
-                if rname in e["specs"]:
-                    for sk in e["specs"][rname]:
-                        e["specs"][rname][sk] = 3
+                r_dict = e["specs"].setdefault(rname, {})
+                for sk in GameMemory.ROLE_ALL_SPECIALIZATIONS.get(rname, []):
+                    r_dict[sk] = 3
             for (ridx, skey), btns in spec_btn_cache.items():
                 for s_star, b in btns.items():
                     is_active = (s_star == 3)
                     b.configure(fg_color=C_ACCENT if is_active else C_BTN_SEC,
                                 text_color=C_ACCENT_TEXT if is_active else C_TEXT_PRI)
-            show_infobar(f"Elevated {cnt} specializations to Level 3 for {e['name']}")
+            show_infobar(f"Elevated all 25 specializations to 3★ for {e['name']}")
 
     ctk.CTkButton(row_sp_top, text="Elevate All to 3★", height=26, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
                   fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=on_elevate_selected_specs).pack(side="right")
@@ -1974,24 +2090,15 @@ def run_gui():
     frame_traits_checklist = ctk.CTkFrame(f_traits, fg_color="transparent")
     frame_traits_checklist.pack(fill="both", expand=True)
 
-    ROLE_ALL_SPECIALIZATIONS = {
-        "Lead": ["Automation", "HR", "Multitasking", "Socialization"],
-        "Code": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
-        "Design": ["2D", "3D", "Audio", "Hardware", "Network", "Sub-Genre", "System"],
-        "Art": ["2D", "3D", "Audio"],
-        "Service": ["Accounting", "Law", "Marketing", "Support"],
-    }
-
     # Rebuilding grids on demand (only when selecting a new employee)
     def rebuild_specs_grid(e: dict):
         for w in frame_specs_grid.winfo_children():
             w.destroy()
         spec_btn_cache.clear()
 
-        total_active_subfields = 0
         for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
             specs = e["specs"].get(rname, {})
-            all_fields = ROLE_ALL_SPECIALIZATIONS.get(rname, [])
+            all_fields = GameMemory.ROLE_ALL_SPECIALIZATIONS.get(rname, [])
 
             ctk.CTkLabel(frame_specs_grid, text=f"■ {rname} Specializations", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(6, 2))
 
@@ -1999,50 +2106,46 @@ def run_gui():
                 row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
                 row_s.pack(fill="x", pady=2, ipady=2)
 
-                if spec_key in specs:
-                    total_active_subfields += 1
-                    cur_lvl = specs[spec_key]
-                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
+                cur_lvl = specs.get(spec_key, 0)
+                ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(side="left", padx=8)
 
-                    row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
-                    row_stars.pack(side="right", padx=6)
+                row_stars = ctk.CTkFrame(row_s, fg_color="transparent")
+                row_stars.pack(side="right", padx=6)
 
-                    spec_btn_cache[(r_idx, spec_key)] = {}
+                spec_btn_cache[(r_idx, spec_key)] = {}
 
-                    for target_star in [0, 1, 2, 3]:
-                        is_active = (cur_lvl == target_star)
-                        b_col = C_ACCENT if is_active else C_BTN_SEC
-                        t_col = C_ACCENT_TEXT if is_active else C_TEXT_PRI
-                        btn_label = f"{target_star}★"
+                for target_star in [0, 1, 2, 3]:
+                    is_active = (cur_lvl == target_star)
+                    b_col = C_ACCENT if is_active else C_BTN_SEC
+                    t_col = C_ACCENT_TEXT if is_active else C_TEXT_PRI
+                    btn_label = f"{target_star}★"
 
-                        def make_spec_setter(ridx=r_idx, skey=spec_key, tlvl=target_star):
-                            def handler():
-                                emp = current_selected_emp[0]
-                                if emp:
-                                    game.set_employee_spec_level(emp["emp_ptr"], ridx, skey, tlvl)
+                    def make_spec_setter(ridx=r_idx, skey=spec_key, tlvl=target_star):
+                        def handler():
+                            emp = current_selected_emp[0]
+                            if emp:
+                                ok = game.set_employee_spec_level(emp["emp_ptr"], ridx, skey, tlvl)
+                                if ok:
                                     emp["specs"].setdefault(GameMemory.ROLE_NAMES[ridx], {})[skey] = tlvl
                                     btns = spec_btn_cache.get((ridx, skey), {})
                                     for s_idx, b in btns.items():
                                         is_act = (s_idx == tlvl)
                                         b.configure(fg_color=C_ACCENT if is_act else C_BTN_SEC,
                                                     text_color=C_ACCENT_TEXT if is_act else C_TEXT_PRI)
-                                    show_infobar(f"Set {skey} to {tlvl}★ for {emp['name']}")
-                            return handler
+                                    show_infobar(f"Set {skey} ({GameMemory.ROLE_NAMES[ridx]}) to {tlvl}★ for {emp['name']}")
+                                else:
+                                    show_infobar(f"Failed to update {skey} for {emp['name']}", is_success=False)
+                        return handler
 
-                        b = ctk.CTkButton(row_stars, text=btn_label, width=32, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
-                                          fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter())
-                        b.pack(side="left", padx=1)
-                        spec_btn_cache[(r_idx, spec_key)][target_star] = b
-                else:
-                    ctk.CTkLabel(row_s, text=spec_key, font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC).pack(side="left", padx=8)
-                    lbl_locked = ctk.CTkLabel(row_s, text="Locked (Unassigned in save)", font=ctk.CTkFont(family="Segoe UI", size=9),
-                                              fg_color=C_BTN_SEC, text_color=C_TEXT_MUTED, corner_radius=4, padx=6, pady=1)
-                    lbl_locked.pack(side="right", padx=6)
+                    b = ctk.CTkButton(row_stars, text=btn_label, width=32, height=22, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                                      fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter())
+                    b.pack(side="left", padx=1)
+                    spec_btn_cache[(r_idx, spec_key)][target_star] = b
 
         c_tip = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
         c_tip.pack(fill="x", pady=(10, 4), padx=2, ipady=4)
-        ctk.CTkLabel(c_tip, text="💡 Unlocking Missing Fields (e.g. 3D, Network)", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=10, pady=(4, 2))
-        ctk.CTkLabel(c_tip, text="In Software Inc., employees only unlock specialized disciplines once they take an education course or assign points in-game.\n\n1. Grant points via 'Skills & Points' tab (or '+10 Pts' above).\n2. In-game, open this employee's character sheet and spend 1 point on 3D or Network.\n3. Return here and click '↻ Refresh Roster' — the star buttons will activate immediately for instant 3★ promotion!",
+        ctk.CTkLabel(c_tip, text="💡 Direct Specialization Elevation (All 25 Subfields Unlocked)", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", padx=10, pady=(4, 2))
+        ctk.CTkLabel(c_tip, text="All disciplines (including 3D, Network, HR, Automation, etc.) can be directly set to any star rating (0★ to 3★) with zero in-game wait time or education courses required. Click 'Elevate All to 3★' above to instantly grant max level across all 25 subfields.",
                      font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_SEC, justify="left", wraplength=370).pack(anchor="w", padx=10, pady=(2, 6))
 
     def rebuild_traits_grid(e: dict):

@@ -35,9 +35,15 @@ Select any employee or facility staff member in the live roster to open the comp
     * **Direct Numeric Input Box**: Enter any exact number of points and click **Apply** (or click **Reset (0)**).
 * **Tab 4: Subfield Specializations**
   * Live status header showing **Available Points to Spend** and **+10 Pts (All)** quick button.
-  * Full interactive grid of all subfields (System, Hardware, 2D, 3D, Audio, Network, HR, Automation, Marketing, Support, Law, Accounting).
-  * Clickable star-rating selector for each subfield: **0★**, **1★**, **2★**, or **3★** with immediate in-game updates.
-  * Helpful guide card for unspecialized personnel explaining how to grant points and specialize.
+  * **Direct All-25 Subfields Elevation**: Fully unlocks and exposes every single discipline across all 5 roles:
+    * **Lead**: Automation, HR, Multitasking, Socialization
+    * **Code**: 2D, 3D, Audio, Hardware, Network, Sub-Genre, System
+    * **Design**: 2D, 3D, Audio, Hardware, Network, Sub-Genre, System
+    * **Art**: 2D, 3D, Audio
+    * **Service**: Accounting, Law, Marketing, Support
+  * **Zero In-Game Waiting**: Uses real-time dynamic Mono dictionary allocation and insertion in game memory. No need to send staff on 1-month education courses or wait for in-game unlock cycles.
+  * **Interactive Star Selectors**: Direct **0★**, **1★**, **2★**, or **3★** buttons for every subfield with instant live memory sync.
+  * **Elevate All to 3★**: Instantly unlocks and maxes out all 25 subfields at level 3 in a single click.
 * **Tab 5: Weaknesses & Traits Management**
   * Trait Badges: visual chips distinguishing active positive traits (teal) and negative weaknesses (red).
   * **Remove Weaknesses**: Cleanses all 8 negative traits while preserving positive perks.
