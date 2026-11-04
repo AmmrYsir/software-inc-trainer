@@ -1482,10 +1482,23 @@ def run_gui():
         "traits": ctk.CTkScrollableFrame(frame_inspector, fg_color="transparent"),
     }
 
+    subtab_map = {
+        "overview": "overview",
+        "needs": "needs",
+        "skills & points": "skills",
+        "skills & exp": "skills",
+        "skills": "skills",
+        "specializations": "specs",
+        "specialization": "specs",
+        "specs": "specs",
+        "traits": "traits",
+    }
+
     def switch_insp_subtab(tab_name: str):
-        insp_subtab[0] = tab_name.lower().replace(" & points", "").replace(" & exp", "")
+        target = subtab_map.get(tab_name.lower().strip(), "overview")
+        insp_subtab[0] = target
         for k, v in insp_views.items():
-            if k == insp_subtab[0]:
+            if k == target:
                 v.pack(fill="both", expand=True, padx=8, pady=(0, 6))
             else:
                 v.pack_forget()
@@ -1967,12 +1980,12 @@ def run_gui():
             w.destroy()
         spec_btn_cache.clear()
 
-        has_specs = False
+        total_active_subfields = 0
         for r_idx, rname in enumerate(GameMemory.ROLE_NAMES):
             specs = e["specs"].get(rname, {})
             if specs:
-                has_specs = True
-                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(4, 2))
+                total_active_subfields += len(specs)
+                ctk.CTkLabel(frame_specs_grid, text=f"■ {rname} Specializations", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"), text_color=C_ACCENT).pack(anchor="w", pady=(6, 2))
                 for spec_key, cur_lvl in specs.items():
                     row_s = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
                     row_s.pack(fill="x", pady=2, ipady=2)
@@ -2007,8 +2020,12 @@ def run_gui():
                                           fg_color=b_col, text_color=t_col, hover_color=C_ACCENT_HOVER, command=make_spec_setter())
                         b.pack(side="left", padx=1)
                         spec_btn_cache[(r_idx, spec_key)][target_star] = b
+            else:
+                row_un = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
+                row_un.pack(fill="x", pady=1, ipady=1)
+                ctk.CTkLabel(row_un, text=f"{rname}: No active subfields unlocked yet", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_MUTED).pack(side="left", padx=8)
 
-        if not has_specs:
+        if total_active_subfields == 0:
             c_empty = ctk.CTkFrame(frame_specs_grid, fg_color=C_CARD_ALT, corner_radius=6, border_width=1, border_color=C_BORDER_SUBTLE)
             c_empty.pack(fill="x", pady=12, padx=4, ipady=8)
             ctk.CTkLabel(c_empty, text="No Active Specializations Initialized", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=C_TEXT_PRI).pack(padx=10, pady=(4, 2))
