@@ -1202,6 +1202,151 @@ class GameMemory:
         return True
 
 
+    # --- Research & Patents Management ---
+
+    def get_active_research(self) -> list:
+        if not self.company:
+            return []
+        work_items_ptr = self.read_ptr(self.company + 0x108)
+        if not work_items_ptr:
+            return []
+        p18 = self.read_ptr(work_items_ptr + 0x18)
+        if not p18:
+            return []
+        arr_len = self.read_u32(p18 + 0x18)
+        tasks = []
+        for i in range(arr_len):
+            e_addr = p18 + 0x20 + i * 16
+            item_ptr = self.read_ptr(e_addr + 8)
+            if not item_ptr:
+                continue
+            vtable = self.read_ptr(item_ptr)
+            klass = self.read_ptr(vtable) if vtable else 0
+            kname = self.read_str_ascii(self.read_ptr(klass + 0x48)) if klass else ""
+            if kname == "ResearchWork":
+                name = self.read_str_net(self.read_ptr(item_ptr + 0x10)) or "Researching"
+                spec = self.read_str_net(self.read_ptr(item_ptr + 0x0B0)) or "General"
+                year = self.read_u32(item_ptr + 0x0C4)
+                progress = self.read_float(item_ptr + 0x0B8)
+                max_val = self.read_u32(item_ptr + 0x0BC)
+                upg_factor = self.read_float(item_ptr + 0x0C0)
+                finished = self.read_u8(item_ptr + 0x0C8) == 1
+                done = self.read_u8(item_ptr + 0x094) == 1
+                paused = self.read_u8(item_ptr + 0x09A) == 1
+                priority = self.read_u32(item_ptr + 0x074)
+
+                display_year = f"19{year:02d}" if year >= 50 else f"20{year:02d}" if year > 0 else "Base"
+                pct = min(100.0, (progress / max(1, max_val)) * 100.0) if max_val > 0 else 0.0
+
+                tasks.append({
+                    "ptr": item_ptr,
+                    "name": name,
+                    "spec": spec,
+                    "year_raw": year,
+                    "year_display": display_year,
+                    "progress": progress,
+                    "max": max_val,
+                    "pct": pct,
+                    "upg_factor": upg_factor,
+                    "finished": finished,
+                    "done": done,
+                    "paused": paused,
+                    "priority": priority,
+                })
+        return tasks
+
+    def max_research_task(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        max_val = self.read_u32(ptr + 0x0BC)
+        target_pts = float(max_val) if max_val > 0 else 48.0
+        self.write_float(ptr + 0x0B8, target_pts)
+        self.write_u8(ptr + 0x0C8, 1)  # Finished = True
+        return True
+
+    def set_research_speed(self, ptr: int, factor: float = 10.0) -> bool:
+        if not ptr:
+            return False
+        return self.write_float(ptr + 0x0C0, max(0.1, float(factor)))
+
+    def set_research_progress(self, ptr: int, progress: float) -> bool:
+        if not ptr:
+            return False
+        return self.write_float(ptr + 0x0B8, max(0.0, float(progress)))
+
+    def max_all_active_research(self) -> int:
+        tasks = self.get_active_research()
+        cnt = 0
+        for t in tasks:
+            if self.max_research_task(t["ptr"]):
+                cnt += 1
+        return cnt
+
+    def boost_all_active_research(self, factor: float = 10.0) -> int:
+        tasks = self.get_active_research()
+        cnt = 0
+        for t in tasks:
+            if self.set_research_speed(t["ptr"], factor):
+                cnt += 1
+        return cnt
+
+    def get_patents(self) -> list:
+        if not self.company:
+            return []
+        patents_ptr = self.read_ptr(self.company + 0x78)
+        if not patents_ptr:
+            return []
+        items = self.read_ptr(patents_ptr + 0x10)
+        count = self.read_u32(patents_ptr + 0x18)
+        if not items or count == 0:
+            return []
+        patents = []
+        for i in range(count):
+            p_ptr = self.read_ptr(items + 0x20 + i * 8)
+            if not p_ptr:
+                continue
+            spec = self.read_str_net(self.read_ptr(p_ptr + 0x10))
+            yr = self.read_u32(p_ptr + 0x28)
+            can_patent = self.read_u8(p_ptr + 0x2C) == 1
+            income = self.read_float(p_ptr + 0x30)
+            royalty = self.read_float(p_ptr + 0x34)
+            outdates = self.read_u32(p_ptr + 0x38)
+            owner = self.read_u32(p_ptr + 0x3C)
+            display_year = f"19{yr:02d}" if yr >= 50 else f"20{yr:02d}" if yr > 0 else "Base"
+
+            patents.append({
+                "ptr": p_ptr,
+                "spec": spec,
+                "year_raw": yr,
+                "year_display": display_year,
+                "can_patent": can_patent,
+                "income": income,
+                "royalty": royalty,
+                "outdates": outdates,
+                "owner": owner,
+            })
+        return patents
+
+    def modify_patent(self, ptr: int, royalty: float = None, income: float = None, outdates: int = None) -> bool:
+        if not ptr:
+            return False
+        if royalty is not None:
+            self.write_float(ptr + 0x34, max(0.0, float(royalty)))
+        if income is not None:
+            self.write_float(ptr + 0x30, max(0.0, float(income)))
+        if outdates is not None:
+            self.write_u32(ptr + 0x38, int(outdates))
+        return True
+
+    def boost_all_patents(self, royalty: float = 0.50, outdates: int = 2099) -> int:
+        patents = self.get_patents()
+        cnt = 0
+        for p in patents:
+            if self.modify_patent(p["ptr"], royalty=royalty, outdates=outdates):
+                cnt += 1
+        return cnt
+
+
 # Global Memory Engine Instance
 game = GameMemory()
 
@@ -1243,6 +1388,12 @@ def run_cli(args):
         print("  --set-proj-fans <name> <n> Set followers for specific project")
         print("  --add-proj-fans <n>       Add followers to all active projects")
         print("  --max-product [name]      Max quality (1.5), 100% awareness & clear bugs on product(s)")
+        print("  --list-research           List active research tasks, progress (pts & %), and speed factor")
+        print("  --list-patents            List corporate patents, royalty percentages, and collected income")
+        print("  --max-research [spec]     Instantly complete active research task(s) and trigger patent grant")
+        print("  --set-research-speed <n>  Set research speed multiplier (e.g. 5.0, 10.0, 50.0) across tasks")
+        print("  --set-research-prog <s <n> Set exact progress points on active research")
+        print("  --boost-patents           Boost all patents to 50% royalty and extend expiration to 2099")
         return 0
 
     if not game.attach():
@@ -1359,6 +1510,10 @@ def run_cli(args):
             print(f"[+] Total Detected Personnel: {len(emps)} (Employees + Facility Staff)")
             print(f"[+] Active Projects:         {len(projs)} in development")
             print(f"[+] Released Products:       {len(prods)} products on market")
+            res_tasks = game.get_active_research()
+            patents = game.get_patents()
+            print(f"[+] Active Research:         {len(res_tasks)} research projects")
+            print(f"[+] Patents Held:            {len(patents)} technology patents")
             i += 1
         elif cmd == "--list-projects":
             projs = game.get_active_projects()
@@ -1485,6 +1640,61 @@ def run_cli(args):
                     cnt += 1
             if cnt == 0:
                 print("[!] No matching released product found.")
+        elif cmd == "--list-research":
+            tasks = game.get_active_research()
+            print(f"\n--- Active Research Tasks: {len(tasks)} ---")
+            if not tasks:
+                print("  (No active research tasks in progress)")
+            for t in tasks:
+                fin = " [FINISHED]" if t["finished"] else ""
+                paused = " [PAUSED]" if t["paused"] else ""
+                print(f"  - [{t['spec']} - {t['year_display']}]{fin}{paused}: {t['progress']:.2f} / {t['max']} pts ({t['pct']:.1f}%) | Speed: {t['upg_factor']:.1f}x")
+            i += 1
+        elif cmd == "--list-patents":
+            patents = game.get_patents()
+            print(f"\n--- Corporate Patents Catalog: {len(patents)} ---")
+            if not patents:
+                print("  (No patents held yet)")
+            for p in patents:
+                print(f"  - [{p['spec']} - {p['year_display']}]: Royalty: {p['royalty']*100:.1f}% | Revenue: ${p['income']:,.2f} | Expires: Year {p['outdates']}")
+            i += 1
+        elif cmd == "--max-research":
+            target_spec = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_spec:
+                i += 2
+            else:
+                i += 1
+            tasks = game.get_active_research()
+            cnt = 0
+            for t in tasks:
+                if not target_spec or target_spec in t["spec"].lower() or target_spec == "all":
+                    game.max_research_task(t["ptr"])
+                    print(f"[SUCCESS] Completed research on '{t['spec']} - {t['year_display']}' (Max points awarded, Finished flag set)!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active research task found.")
+        elif cmd == "--set-research-speed" and i + 1 < len(args):
+            factor = float(args[i+1])
+            cnt = game.boost_all_active_research(factor)
+            print(f"[SUCCESS] Set research speed multiplier to {factor:.1f}x across {cnt} active research tasks!")
+            i += 2
+        elif cmd == "--set-research-prog" and i + 2 < len(args):
+            target_spec = args[i+1].lower()
+            pts = float(args[i+2])
+            tasks = game.get_active_research()
+            cnt = 0
+            for t in tasks:
+                if target_spec in t["spec"].lower() or target_spec == "all":
+                    game.set_research_progress(t["ptr"], pts)
+                    print(f"[SUCCESS] Set research progress to {pts:.2f} pts on '{t['spec']} - {t['year_display']}'!")
+                    cnt += 1
+            if cnt == 0:
+                print(f"[!] No active research task matching '{target_spec}' found.")
+            i += 3
+        elif cmd == "--boost-patents":
+            cnt = game.boost_all_patents(royalty=0.50, outdates=2099)
+            print(f"[SUCCESS] Boosted {cnt} patents: Set royalties to 50% and extended expiration to Year 2099!")
+            i += 1
         else:
             i += 1
 
@@ -1609,6 +1819,7 @@ def run_gui():
         "founder": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "personnel": ctk.CTkFrame(content_viewport, fg_color="transparent"),
         "projects": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
+        "research": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "world": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "hotkeys": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
     }
@@ -1643,6 +1854,7 @@ def run_gui():
         ("founder", "Founder Profile"),
         ("personnel", "Personnel & Teams"),
         ("projects", "Projects & Software"),
+        ("research", "Research & Patents"),
         ("world", "World & Rules"),
         ("hotkeys", "Hotkeys"),
     ]
@@ -3096,7 +3308,240 @@ def run_gui():
     page_switch_callbacks["projects"] = lambda: refresh_projects_ui()
 
     # =========================================================
-    # PAGE 5: WORLD & RULES
+    # PAGE 5: RESEARCH & PATENTS
+    # =========================================================
+    p_res = pages["research"]
+
+    ctk.CTkLabel(p_res, text="Research & Patents", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(0, 2))
+    ctk.CTkLabel(p_res, text="Accelerate active research projects, control research speed multipliers, maximize patent royalties, and extend technology monopolies.", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 14))
+
+    # Top Toolbar Card
+    sc_res_tb = ctk.CTkFrame(p_res, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+    sc_res_tb.pack(fill="x", pady=(0, 10), ipady=6)
+
+    row_rtb_top = ctk.CTkFrame(sc_res_tb, fg_color="transparent")
+    row_rtb_top.pack(fill="x", padx=14, pady=(6, 4))
+
+    lbl_res_badge = ctk.CTkLabel(row_rtb_top, text="0 Active Research | 0 Patents Held",
+                                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                                 fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, corner_radius=4, padx=8, pady=3)
+    lbl_res_badge.pack(side="left")
+
+    btn_res_refresh = ctk.CTkButton(row_rtb_top, text="↻ Refresh Research", width=140, height=30,
+                                    font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                                    fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER)
+    btn_res_refresh.pack(side="right")
+
+    row_rtb_batch = ctk.CTkFrame(sc_res_tb, fg_color="transparent")
+    row_rtb_batch.pack(fill="x", padx=14, pady=(4, 6))
+
+    ctk.CTkButton(row_rtb_batch, text="Complete All Active Research", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER,
+                  command=lambda: (game.max_all_active_research(), show_infobar("Maxed and completed all active research tasks (Patent granted on next tick)"), refresh_research_ui())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_rtb_batch, text="Set 25x Speed Multiplier (All)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.boost_all_active_research(25.0), show_infobar("Supercharged research speed to 25x across all active tasks"), refresh_research_ui())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_rtb_batch, text="Boost All Patents (50% / 2099)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.boost_all_patents(royalty=0.50, outdates=2099), show_infobar("Boosted all patents: 50% royalty rate and expiration extended to Year 2099"), refresh_research_ui())).pack(side="left", expand=True, fill="x", padx=2)
+
+    # --- SECTION 1: ACTIVE RESEARCH OPERATIONS ---
+    ctk.CTkLabel(p_res, text="Active Research Operations", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(8, 2))
+    ctk.CTkLabel(p_res, text="Monitor active laboratory research tasks, advance points, and configure speed factors.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 6))
+
+    frame_res_list = ctk.CTkFrame(p_res, fg_color="transparent")
+    frame_res_list.pack(fill="x", pady=(0, 16))
+
+    # --- SECTION 2: PATENTS & ROYALTY MONOPOLIES ---
+    ctk.CTkLabel(p_res, text="Corporate Patents & Royalty Streams", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(12, 2))
+    ctk.CTkLabel(p_res, text="Manage company-owned technology patents, royalty fee percentages, and monopoly expirations.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 6))
+
+    frame_pat_list = ctk.CTkFrame(p_res, fg_color="transparent")
+    frame_pat_list.pack(fill="x", pady=(0, 16))
+
+    def render_research_ui():
+        for w in frame_res_list.winfo_children():
+            w.destroy()
+        for w in frame_pat_list.winfo_children():
+            w.destroy()
+
+        if not game.is_attached():
+            ctk.CTkLabel(frame_res_list, text="Attach to game to view active research.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=12)
+            ctk.CTkLabel(frame_pat_list, text="Attach to game to view patents.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=12)
+            return
+
+        tasks = game.get_active_research()
+        patents = game.get_patents()
+        lbl_res_badge.configure(text=f"{len(tasks)} Active Research | {len(patents)} Patents Held")
+
+        # Render Active Research
+        if not tasks:
+            empty_card = ctk.CTkFrame(frame_res_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+            empty_card.pack(fill="x", pady=4, ipady=12)
+            ctk.CTkLabel(empty_card, text="No active research tasks in progress.", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=C_TEXT_PRI).pack()
+            ctk.CTkLabel(empty_card, text="Start a research project (System, 2D, 3D, Audio, Hardware, Network) in Software Inc. to manipulate it here.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(pady=(2, 0))
+        else:
+            for t in tasks:
+                card = ctk.CTkFrame(frame_res_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+                card.pack(fill="x", pady=4, ipady=8)
+
+                # Header
+                hdr = ctk.CTkFrame(card, fg_color="transparent")
+                hdr.pack(fill="x", padx=14, pady=(6, 4))
+
+                title_box = ctk.CTkFrame(hdr, fg_color="transparent")
+                title_box.pack(side="left")
+
+                ctk.CTkLabel(title_box, text=f"{t['spec']} - {t['year_display']}", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+
+                badge_spec = ctk.CTkLabel(title_box, text=t['spec'], font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                          fg_color=("#E0F2FE", "#0369A1"), text_color=("#0369A1", "#F0F9FF"), corner_radius=4, padx=6, pady=1)
+                badge_spec.pack(side="left", padx=6)
+
+                badge_spd = ctk.CTkLabel(title_box, text=f"Speed: {t['upg_factor']:.1f}x", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                         fg_color=("#FEF3C7", "#92400E"), text_color=("#92400E", "#FFFBEB"), corner_radius=4, padx=6, pady=1)
+                badge_spd.pack(side="left", padx=2)
+
+                if t["finished"]:
+                    badge_fin = ctk.CTkLabel(title_box, text="COMPLETED", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                             fg_color=("#D1FAE5", "#065F46"), text_color=("#065F46", "#ECFDF5"), corner_radius=4, padx=6, pady=1)
+                    badge_fin.pack(side="left", padx=4)
+
+                if t["paused"]:
+                    badge_pause = ctk.CTkLabel(title_box, text="PAUSED", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                               fg_color=("#FEE2E2", "#991B1B"), text_color=("#991B1B", "#FEF2F2"), corner_radius=4, padx=6, pady=1)
+                    badge_pause.pack(side="left", padx=4)
+
+                # Progress Bar
+                p_row = ctk.CTkFrame(card, fg_color="transparent")
+                p_row.pack(fill="x", padx=14, pady=(4, 6))
+
+                bar_box = ctk.CTkFrame(p_row, fg_color="transparent")
+                bar_box.pack(fill="x")
+
+                pb = ctk.CTkProgressBar(bar_box, height=8, corner_radius=4, progress_color=C_ACCENT, fg_color=C_CARD_ALT)
+                pb.set(min(1.0, t["pct"] / 100.0))
+                pb.pack(fill="x", pady=(2, 2))
+
+                lbl_pts = ctk.CTkLabel(bar_box, text=f"Research Points: {t['progress']:.2f} / {t['max']} pts ({t['pct']:.1f}%)",
+                                       font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC)
+                lbl_pts.pack(anchor="w")
+
+                # Action Controls
+                act_row = ctk.CTkFrame(card, fg_color="transparent")
+                act_row.pack(fill="x", padx=14, pady=(4, 4))
+
+                def make_complete_cb(ptr=t['ptr'], name=f"{t['spec']} - {t['year_display']}"):
+                    return lambda: (game.max_research_task(ptr), show_infobar(f"Maxed research for '{name}'! Patent will register on next tick."), refresh_research_ui())
+
+                ctk.CTkButton(act_row, text="Instant Complete", width=120, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER,
+                              command=make_complete_cb()).pack(side="left", padx=(0, 4))
+
+                def make_speed_cb(factor, ptr=t['ptr'], name=f"{t['spec']} - {t['year_display']}"):
+                    return lambda: (game.set_research_speed(ptr, factor), show_infobar(f"Set speed to {factor:.0f}x for '{name}'"), refresh_research_ui())
+
+                ctk.CTkButton(act_row, text="10x Speed", width=80, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                              command=make_speed_cb(10.0)).pack(side="left", padx=2)
+
+                ctk.CTkButton(act_row, text="50x Speed", width=80, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                              command=make_speed_cb(50.0)).pack(side="left", padx=2)
+
+                # Set custom points
+                ent_pts = ctk.CTkEntry(act_row, width=65, height=26, font=ctk.CTkFont(family="Segoe UI", size=10),
+                                       fg_color=C_CARD_ALT, border_color=C_BORDER, text_color=C_TEXT_PRI)
+                ent_pts.insert(0, str(int(t['max'])))
+                ent_pts.pack(side="left", padx=(8, 2))
+
+                def make_pts_cb(e=ent_pts, ptr=t['ptr'], name=f"{t['spec']} - {t['year_display']}"):
+                    def _apply():
+                        try:
+                            val = float(e.get().strip())
+                            game.set_research_progress(ptr, val)
+                            show_infobar(f"Set progress to {val:.1f} pts for '{name}'")
+                            refresh_research_ui()
+                        except ValueError:
+                            pass
+                    return _apply
+
+                ctk.CTkButton(act_row, text="Set Points", width=75, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                              command=make_pts_cb()).pack(side="left", padx=2)
+
+        # Render Corporate Patents
+        if not patents:
+            empty_pat = ctk.CTkFrame(frame_pat_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+            empty_pat.pack(fill="x", pady=4, ipady=12)
+            ctk.CTkLabel(empty_pat, text="No corporate patents currently held.", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=C_TEXT_PRI).pack()
+            ctk.CTkLabel(empty_pat, text="When an active research task completes, its patented technology level is registered here with royalty revenue streams.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(pady=(2, 0))
+        else:
+            for p in patents:
+                card = ctk.CTkFrame(frame_pat_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+                card.pack(fill="x", pady=4, ipady=8)
+
+                hdr = ctk.CTkFrame(card, fg_color="transparent")
+                hdr.pack(fill="x", padx=14, pady=(6, 4))
+
+                title_box = ctk.CTkFrame(hdr, fg_color="transparent")
+                title_box.pack(side="left")
+
+                ctk.CTkLabel(title_box, text=f"Patent: {p['spec']} ({p['year_display']})", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), text_color=C_TEXT_PRI).pack(side="left")
+
+                badge_stat = ctk.CTkLabel(title_box, text="ACTIVE PATENT", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                          fg_color=("#D1FAE5", "#065F46"), text_color=("#065F46", "#ECFDF5"), corner_radius=4, padx=6, pady=1)
+                badge_stat.pack(side="left", padx=6)
+
+                # Metrics row
+                m_row = ctk.CTkFrame(card, fg_color="transparent")
+                m_row.pack(fill="x", padx=14, pady=(2, 6))
+
+                ctk.CTkLabel(m_row, text=f"Royalty Rate: {p['royalty']*100:.1f}%  |  Collected Revenue: ${p['income']:,.2f}  |  Expires: Year {p['outdates']}",
+                             font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(anchor="w")
+
+                # Action Controls
+                act_row = ctk.CTkFrame(card, fg_color="transparent")
+                act_row.pack(fill="x", padx=14, pady=(4, 4))
+
+                def make_royalty_cb(ptr=p['ptr'], spec=p['spec']):
+                    return lambda: (game.modify_patent(ptr, royalty=0.50), show_infobar(f"Set royalty to 50% for patent '{spec}'"), refresh_research_ui())
+
+                ctk.CTkButton(act_row, text="Set 50% Royalty", width=120, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                              command=make_royalty_cb()).pack(side="left", padx=(0, 4))
+
+                def make_extend_cb(ptr=p['ptr'], spec=p['spec']):
+                    return lambda: (game.modify_patent(ptr, outdates=2099), show_infobar(f"Extended patent '{spec}' expiration to Year 2099"), refresh_research_ui())
+
+                ctk.CTkButton(act_row, text="Extend to Year 2099", width=130, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                              command=make_extend_cb()).pack(side="left", padx=2)
+
+                def make_add_inc_cb(ptr=p['ptr'], cur=p['income'], spec=p['spec']):
+                    return lambda: (game.modify_patent(ptr, income=cur + 100000.0), show_infobar(f"Added +$100,000 royalty revenue to '{spec}'"), refresh_research_ui())
+
+                ctk.CTkButton(act_row, text="+$100k Royalty Cash", width=130, height=26,
+                              font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                              fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER,
+                              command=make_add_inc_cb()).pack(side="left", padx=2)
+
+    def refresh_research_ui(show_message: bool = False):
+        render_research_ui()
+        if show_message:
+            show_infobar("Refreshed research operations and corporate patents from game memory")
+
+    btn_res_refresh.configure(command=lambda: refresh_research_ui(show_message=True))
+    page_switch_callbacks["research"] = lambda: refresh_research_ui()
+
+    # =========================================================
+    # PAGE 6: WORLD & RULES
     # =========================================================
     p_wrld = pages["world"]
 

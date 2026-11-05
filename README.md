@@ -34,6 +34,20 @@ Monitor, accelerate, and manipulate every stage of software product development:
   * Telemetry on Product Quality, Unit Retail Price, Active Users, Market Awareness %, Post-launch Bugs, and User Reviews (👍 / 👎).
   * Quick Actions: **Clear Bugs (0)**, **Max Awareness (100%)**, **Boost Fans (+50k)**, and **Outstanding Quality (1.50+)**.
 
+### 🔬 Research & Patents Suite
+Accelerate laboratory breakthroughs, unlock technology decades early, and control worldwide technology monopolies:
+* **Active Research Operations (`ResearchWork`)**
+  * Live tracking of active research projects across all specializations (**System**, **2D**, **3D**, **Audio**, **Hardware**, **Network**) and target years (e.g. `System - 1988`).
+  * Live progress telemetry: current points, target maximum points, completion percentage, and active speed multiplier.
+  * **Instant Complete Research**: Immediately awards 100% required research points and marks the task finished, triggering the patent grant on the next in-game tick.
+  * **Supercharge Research Speed (`UpgFactor`)**: Set speed multipliers (`10x`, `25x`, `50x`) so assigned research staff achieve breakthroughs in seconds without artificial waiting.
+  * **Direct Points Editor**: Set exact progress points (e.g. `45.0 / 48`) via quick buttons or numeric input.
+* **Corporate Patents & Royalty Monopolies (`TechLevel`)**
+  * Live catalog of all patents held by your enterprise inside `Company.Patents`.
+  * **Maximize Royalty Rates (`Royalty`)**: Increase royalty fee percentages charged to competitor AI companies when they develop software utilizing your patented technology.
+  * **Monopoly Extension (`Outdates`)**: Extends patent expiration dates decades into the future (e.g. Year `2099`), locking in exclusive rights forever.
+  * **Passive Revenue Injections (`Income`)**: Directly inject or boost accumulated patent royalty revenue streams.
+
 ### 👤 Deep Personnel & Staff Inspector
 Select any employee or facility staff member in the live roster to open the comprehensive 5-tab inspector:
 * **Zero-Lag Architecture**: Event-driven roster caching with instant in-place card selection. The roster never flickers or resets scroll positions.
@@ -178,6 +192,8 @@ Unlike invasive DLL injection that can destabilize Unity garbage collection or t
    * Company at `GameSettings.Instance + 0x128`
    * WorkItems Set at `Company + 0x108` (`SHashSet<WorkItem>`)
    * Products List at `Company + 0x110` (`List<SoftwareProduct>`)
+   * Patents List at `Company + 0x078` (`List<TechLevel>`)
+   * Latest Research Dict at `Company + 0x038` (`Dictionary<string, int>`)
    * ActorManager at `GameSettings.Instance + 0x120`
    * Active Actors at `ActorManager + 0x10`
    * Facility Staff at `ActorManager + 0x18`
@@ -251,6 +267,25 @@ python trainer.py --add-proj-fans 25000
 # Maximize quality (1.50), set 100% market awareness, and clear bugs on released product
 python trainer.py --max-product "2Dimp"
 python trainer.py --max-product all
+
+# List all active research projects and points
+python trainer.py --list-research
+
+# Instantly complete active research task (e.g. "System" or all active)
+python trainer.py --max-research "System"
+python trainer.py --max-research all
+
+# Supercharge research speed multiplier across all active tasks (e.g. 10x, 25x)
+python trainer.py --set-research-speed 10.0
+
+# Set exact progress points on an active research item
+python trainer.py --set-research-prog "System" 45.0
+
+# List all corporate patents held with royalty rates and revenue
+python trainer.py --list-patents
+
+# Boost all patents (set 50% royalty rate and extend monopoly expiration to Year 2099)
+python trainer.py --boost-patents
 
 # List all teams, employees, facility staff, salaries, and weaknesses
 python trainer.py --list-teams
