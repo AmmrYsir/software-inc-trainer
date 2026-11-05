@@ -946,6 +946,262 @@ class GameMemory:
         return sum(1 for e in emps if self.add_employee_spec_exp(e["emp_ptr"], delta))
 
 
+    # --- Projects & Software Management ---
+
+    def get_active_projects(self) -> list:
+        if not self.company:
+            return []
+        work_items_ptr = self.read_ptr(self.company + 0x108)
+        if not work_items_ptr:
+            return []
+        p18 = self.read_ptr(work_items_ptr + 0x18)
+        if not p18:
+            return []
+        arr_len = self.read_u32(p18 + 0x18)
+        projects = []
+        for i in range(arr_len):
+            e_addr = p18 + 0x20 + i * 16
+            item_ptr = self.read_ptr(e_addr + 8)
+            if not item_ptr:
+                continue
+            vtable = self.read_ptr(item_ptr)
+            klass = self.read_ptr(vtable) if vtable else 0
+            kname = self.read_str_ascii(self.read_ptr(klass + 0x48)) if klass else ""
+            if kname == "DesignDocument":
+                name = self.read_str_net(self.read_ptr(item_ptr + 0xA8)) or self.read_str_net(self.read_ptr(item_ptr + 0x10)) or f"Design #{i+1}"
+                progress = self.read_float(item_ptr + 0x23C)
+                iteration = self.read_u32(item_ptr + 0x22C)
+                lead_prog = self.read_float(item_ptr + 0x238)
+                rev_acc = self.read_float(item_ptr + 0x230)
+                finished = self.read_u8(item_ptr + 0x228) == 1
+                followers = self.read_float(item_ptr + 0x1A0)
+                max_followers = self.read_u32(item_ptr + 0x1A4)
+                projects.append({
+                    "ptr": item_ptr,
+                    "type": "Design",
+                    "name": name,
+                    "progress": progress,
+                    "iteration": iteration,
+                    "lead_prog": lead_prog,
+                    "rev_acc": rev_acc,
+                    "has_finished": finished,
+                    "followers": followers,
+                    "max_followers": max_followers,
+                })
+            elif kname in ("SoftwareAlpha", "SoftwareWorkItem"):
+                name = self.read_str_net(self.read_ptr(item_ptr + 0xA8)) or self.read_str_net(self.read_ptr(item_ptr + 0x10)) or f"Software #{i+1}"
+                in_beta = self.read_u8(item_ptr + 0x240) == 1
+                released = self.read_u8(item_ptr + 0x241) == 1
+                has_finished = self.read_u8(item_ptr + 0x242) == 1
+                has_code = self.read_u8(item_ptr + 0x244) == 1
+                has_art = self.read_u8(item_ptr + 0x243) == 1
+                bugs = self.read_float(item_ptr + 0x248)
+                fixed_bugs = self.read_float(item_ptr + 0x24C)
+                design_prog = self.read_float(item_ptr + 0x270)
+                rev_score = self.read_float(item_ptr + 0x27C)
+                followers = self.read_float(item_ptr + 0x1A0)
+                max_followers = self.read_u32(item_ptr + 0x1A4)
+
+                features_ptr = self.read_ptr(item_ptr + 0x118)
+                feat_count = self.read_u32(features_ptr + 0x18) if features_ptr else 0
+                tot_cp, tot_cd, tot_ap, tot_ad = 0.0, 0.0, 0.0, 0.0
+                features_list = []
+                for f_idx in range(feat_count):
+                    fp = self.read_ptr(features_ptr + 0x20 + f_idx * 8)
+                    if fp:
+                        cdev = self.read_double(fp + 0x20)
+                        adev = self.read_double(fp + 0x28)
+                        cprog = self.read_double(fp + 0x30)
+                        aprog = self.read_double(fp + 0x38)
+                        tot_cd += cdev
+                        tot_ad += adev
+                        tot_cp += cprog
+                        tot_ap += aprog
+                        f_obj = self.read_ptr(fp + 0x10)
+                        fname = self.read_str_net(self.read_ptr(f_obj + 0x10)) if f_obj else f"Feature #{f_idx+1}"
+                        features_list.append({
+                            "ptr": fp,
+                            "name": fname,
+                            "code_prog": cprog,
+                            "code_req": cdev,
+                            "art_prog": aprog,
+                            "art_req": adev,
+                        })
+
+                projects.append({
+                    "ptr": item_ptr,
+                    "type": "Beta" if in_beta else "Alpha",
+                    "name": name,
+                    "in_beta": in_beta,
+                    "released": released,
+                    "has_finished": has_finished,
+                    "has_code": has_code,
+                    "has_art": has_art,
+                    "bugs": bugs,
+                    "fixed_bugs": fixed_bugs,
+                    "design_prog": design_prog,
+                    "rev_score": rev_score,
+                    "followers": followers,
+                    "max_followers": max_followers,
+                    "tot_code_prog": tot_cp,
+                    "tot_code_req": tot_cd,
+                    "code_pct": (tot_cp / max(0.001, tot_cd)) * 100.0,
+                    "tot_art_prog": tot_ap,
+                    "tot_art_req": tot_ad,
+                    "art_pct": (tot_ap / max(0.001, tot_ad)) * 100.0,
+                    "features": features_list,
+                })
+        return projects
+
+    def get_released_products(self) -> list:
+        if not self.company:
+            return []
+        products_ptr = self.read_ptr(self.company + 0x110)
+        if not products_ptr:
+            return []
+        p_items = self.read_ptr(products_ptr + 0x10)
+        p_count = self.read_u32(products_ptr + 0x18)
+        products = []
+        for i in range(p_count):
+            prod_ptr = self.read_ptr(p_items + 0x20 + i * 8)
+            if not prod_ptr:
+                continue
+            name = self.read_str_net(self.read_ptr(prod_ptr + 0x28)) or f"Product #{i+1}"
+            quality = self.read_double(prod_ptr + 0x158)
+            followers = self.read_u32(prod_ptr + 0x168)
+            awareness = self.read_float(prod_ptr + 0x20C)
+            bugs = self.read_u32(prod_ptr + 0x1F4)
+            pos_reviews = self.read_u32(prod_ptr + 0x1EC)
+            neg_reviews = self.read_u32(prod_ptr + 0x1F0)
+            price = self.read_float(prod_ptr + 0x214)
+            userbase = self.read_u32(prod_ptr + 0x2A4)
+            products.append({
+                "ptr": prod_ptr,
+                "name": name,
+                "quality": quality,
+                "followers": followers,
+                "awareness": awareness,
+                "bugs": bugs,
+                "pos_reviews": pos_reviews,
+                "neg_reviews": neg_reviews,
+                "price": price,
+                "userbase": userbase,
+            })
+        return products
+
+    def max_design_project(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        self.write_u32(ptr + 0x22C, 3)        # Iteration 3
+        self.write_float(ptr + 0x23C, 1.0)     # _currentProgress = 100%
+        self.write_float(ptr + 0x238, 1.0)     # LeadProgress = 100%
+        self.write_float(ptr + 0x230, 1.0)     # ReviewAccuracy = 100%
+        self.write_u8(ptr + 0x228, 1)          # HasFinished = True
+        return True
+
+    def max_dev_project(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        features_ptr = self.read_ptr(ptr + 0x118)
+        feat_count = self.read_u32(features_ptr + 0x18) if features_ptr else 0
+        for f_idx in range(feat_count):
+            fp = self.read_ptr(features_ptr + 0x20 + f_idx * 8)
+            if fp:
+                cdev = self.read_double(fp + 0x20)
+                adev = self.read_double(fp + 0x28)
+                self.write_double(fp + 0x30, cdev)
+                self.write_double(fp + 0x38, adev)
+                self.write_double(fp + 0x40, 1.0)
+                self.write_double(fp + 0x48, 1.0)
+                self.write_u8(fp + 0x61, 1)
+                self.write_u8(fp + 0x62, 1)
+        self.write_u8(ptr + 0x244, 1)          # HasFinishedCode
+        self.write_u8(ptr + 0x243, 1)          # HasFinishedArt
+        self.write_float(ptr + 0x27C, 1.0)     # ReviewScore = 1.0
+        return True
+
+    def clear_project_bugs(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        cur_bugs = self.read_float(ptr + 0x248)
+        cur_fixed = self.read_float(ptr + 0x24C)
+        self.write_float(ptr + 0x24C, cur_fixed + cur_bugs)
+        self.write_float(ptr + 0x248, 0.0)
+        return True
+
+    def set_project_followers(self, ptr: int, count: float) -> bool:
+        if not ptr:
+            return False
+        val = max(0.0, float(count))
+        self.write_float(ptr + 0x1A0, val)
+        cur_max = self.read_u32(ptr + 0x1A4)
+        if cur_max < int(val):
+            self.write_u32(ptr + 0x1A4, int(val))
+        return True
+
+    def promote_project_to_beta(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        return self.write_u8(ptr + 0x240, 1)
+
+    def ready_project_for_release(self, ptr: int) -> bool:
+        if not ptr:
+            return False
+        self.max_dev_project(ptr)
+        self.clear_project_bugs(ptr)
+        self.write_u8(ptr + 0x242, 1)  # HasFinished = True
+        return True
+
+    def max_all_active_designs(self) -> int:
+        projs = self.get_active_projects()
+        cnt = 0
+        for p in projs:
+            if p["type"] == "Design":
+                if self.max_design_project(p["ptr"]):
+                    cnt += 1
+        return cnt
+
+    def max_all_active_devs(self) -> int:
+        projs = self.get_active_projects()
+        cnt = 0
+        for p in projs:
+            if p["type"] in ("Alpha", "Beta"):
+                if self.max_dev_project(p["ptr"]):
+                    cnt += 1
+        return cnt
+
+    def clear_all_projects_bugs(self) -> int:
+        projs = self.get_active_projects()
+        cnt = 0
+        for p in projs:
+            if p["type"] in ("Alpha", "Beta"):
+                if self.clear_project_bugs(p["ptr"]):
+                    cnt += 1
+        return cnt
+
+    def add_all_projects_followers(self, delta: float = 25000.0) -> int:
+        projs = self.get_active_projects()
+        cnt = 0
+        for p in projs:
+            cur = p.get("followers", 0.0)
+            if self.set_project_followers(p["ptr"], cur + delta):
+                cnt += 1
+        return cnt
+
+    def modify_released_product(self, ptr: int, quality: float = None, followers: int = None, awareness: float = None, clear_bugs: bool = False) -> bool:
+        if not ptr:
+            return False
+        if quality is not None:
+            self.write_double(ptr + 0x158, float(quality))
+        if followers is not None:
+            self.write_u32(ptr + 0x168, int(followers))
+        if awareness is not None:
+            self.write_float(ptr + 0x20C, float(awareness))
+        if clear_bugs:
+            self.write_u32(ptr + 0x1F4, 0)
+        return True
+
+
 # Global Memory Engine Instance
 game = GameMemory()
 
@@ -977,6 +1233,16 @@ def run_cli(args):
         print("  --unlock-furniture        Unlock all locked furniture and equipment")
         print("  --force-lights            Force all lights on")
         print("  --speed <multiplier>      Set game simulation speed (e.g. 1.0, 5.0)")
+        print("  --list-projects           List active design, alpha, and beta projects with progress")
+        print("  --list-products           List released software products and metrics")
+        print("  --max-design [name]       Max design phase (100% progress, Iteration 3) for project(s)")
+        print("  --max-dev [name]          Complete code & art (100%) for active alpha/beta project(s)")
+        print("  --clear-bugs [name]       Clear all bugs (0) on active alpha/beta project(s)")
+        print("  --promote-beta [name]     Promote project(s) to Beta phase")
+        print("  --ready-release [name]    Ready project(s) for release (max dev + 0 bugs + finished)")
+        print("  --set-proj-fans <name> <n> Set followers for specific project")
+        print("  --add-proj-fans <n>       Add followers to all active projects")
+        print("  --max-product [name]      Max quality (1.5), 100% awareness & clear bugs on product(s)")
         return 0
 
     if not game.attach():
@@ -1088,8 +1354,137 @@ def run_cli(args):
             i += 2
         elif cmd == "--status":
             emps = game.get_employees()
+            projs = game.get_active_projects()
+            prods = game.get_released_products()
             print(f"[+] Total Detected Personnel: {len(emps)} (Employees + Facility Staff)")
+            print(f"[+] Active Projects:         {len(projs)} in development")
+            print(f"[+] Released Products:       {len(prods)} products on market")
             i += 1
+        elif cmd == "--list-projects":
+            projs = game.get_active_projects()
+            print(f"\n--- Active Software Projects: {len(projs)} ---")
+            for p in projs:
+                if p["type"] == "Design":
+                    fin = " [FINISHED]" if p["has_finished"] else ""
+                    print(f"  [Design] {p['name']}{fin}: Iteration {p['iteration']}/3 | Prog: {p['progress']*100:.1f}% | Followers: {p['followers']:,.0f}")
+                else:
+                    stage = "Beta" if p["in_beta"] else "Alpha"
+                    print(f"  [{stage}] {p['name']}: Code {p['code_pct']:.1f}% | Art {p['art_pct']:.1f}% | Bugs: {p['bugs']:.1f} | Followers: {p['followers']:,.0f}")
+            i += 1
+        elif cmd == "--list-products":
+            prods = game.get_released_products()
+            print(f"\n--- Released Software Catalog: {len(prods)} ---")
+            for p in prods:
+                print(f"  - {p['name']}: Quality {p['quality']:.2f} | Fans: {p['followers']:,} | Awareness: {p['awareness']*100:.1f}% | Bugs: {p['bugs']} | Users: {p['userbase']:,} | Price: ${p['price']:.2f}")
+            i += 1
+        elif cmd == "--max-design":
+            target_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_name:
+                i += 2
+            else:
+                i += 1
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if p["type"] == "Design" and (not target_name or target_name in p["name"].lower() or target_name == "all"):
+                    game.max_design_project(p["ptr"])
+                    print(f"[SUCCESS] Maxed design for '{p['name']}' (Iteration 3, 100% Progress, Ready for Dev)!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active design project found.")
+        elif cmd == "--max-dev":
+            target_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_name:
+                i += 2
+            else:
+                i += 1
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if p["type"] in ("Alpha", "Beta") and (not target_name or target_name in p["name"].lower() or target_name == "all"):
+                    game.max_dev_project(p["ptr"])
+                    print(f"[SUCCESS] Completed 100% code & art programming for '{p['name']}'!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active dev project found.")
+        elif cmd == "--clear-bugs":
+            target_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_name:
+                i += 2
+            else:
+                i += 1
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if p["type"] in ("Alpha", "Beta") and (not target_name or target_name in p["name"].lower() or target_name == "all"):
+                    game.clear_project_bugs(p["ptr"])
+                    print(f"[SUCCESS] Cleared all bugs (0) for '{p['name']}'!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active project found.")
+        elif cmd == "--promote-beta":
+            target_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_name:
+                i += 2
+            else:
+                i += 1
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if p["type"] == "Alpha" and (not target_name or target_name in p["name"].lower() or target_name == "all"):
+                    game.promote_project_to_beta(p["ptr"])
+                    print(f"[SUCCESS] Promoted '{p['name']}' to Beta phase!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active alpha project found.")
+        elif cmd == "--ready-release":
+            target_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if target_name:
+                i += 2
+            else:
+                i += 1
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if p["type"] in ("Alpha", "Beta") and (not target_name or target_name in p["name"].lower() or target_name == "all"):
+                    game.ready_project_for_release(p["ptr"])
+                    print(f"[SUCCESS] Prepared '{p['name']}' for release (Code/Art maxed, 0 bugs, ready)!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching active project found.")
+        elif cmd == "--set-proj-fans" and i + 2 < len(args):
+            proj_name = args[i+1].lower()
+            val = float(args[i+2])
+            projs = game.get_active_projects()
+            cnt = 0
+            for p in projs:
+                if proj_name in p["name"].lower() or proj_name == "all":
+                    game.set_project_followers(p["ptr"], val)
+                    print(f"[SUCCESS] Set followers to {val:,.0f} on '{p['name']}'!")
+                    cnt += 1
+            if cnt == 0:
+                print(f"[!] No active project matching '{proj_name}' found.")
+            i += 3
+        elif cmd == "--add-proj-fans" and i + 1 < len(args):
+            val = float(args[i+1])
+            cnt = game.add_all_projects_followers(val)
+            print(f"[SUCCESS] Added +{val:,.0f} followers across {cnt} active projects!")
+            i += 2
+        elif cmd == "--max-product":
+            prod_name = args[i+1].lower() if i + 1 < len(args) and not args[i+1].startswith("--") else ""
+            if prod_name:
+                i += 2
+            else:
+                i += 1
+            prods = game.get_released_products()
+            cnt = 0
+            for p in prods:
+                if not prod_name or prod_name in p["name"].lower() or prod_name == "all":
+                    game.modify_released_product(p["ptr"], quality=1.5, awareness=1.0, clear_bugs=True)
+                    print(f"[SUCCESS] Maxed quality (1.5), 100% awareness, and cleared bugs for '{p['name']}'!")
+                    cnt += 1
+            if cnt == 0:
+                print("[!] No matching released product found.")
         else:
             i += 1
 
@@ -1213,6 +1608,7 @@ def run_gui():
         "finances": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "founder": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "personnel": ctk.CTkFrame(content_viewport, fg_color="transparent"),
+        "projects": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "world": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
         "hotkeys": ctk.CTkScrollableFrame(content_viewport, fg_color="transparent"),
     }
@@ -1246,6 +1642,7 @@ def run_gui():
         ("finances", "Finances"),
         ("founder", "Founder Profile"),
         ("personnel", "Personnel & Teams"),
+        ("projects", "Projects & Software"),
         ("world", "World & Rules"),
         ("hotkeys", "Hotkeys"),
     ]
@@ -2386,7 +2783,320 @@ def run_gui():
     page_switch_callbacks["personnel"] = lambda: (not cached_employees and refresh_personnel_data())
 
     # =========================================================
-    # PAGE 4: WORLD & RULES
+    # PAGE 4: PROJECTS & SOFTWARE
+    # =========================================================
+    p_proj = pages["projects"]
+
+    ctk.CTkLabel(p_proj, text="Projects & Software", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(0, 2))
+    ctk.CTkLabel(p_proj, text="Accelerate software design, programming, beta bug fixing, and market follower metrics.", font=ctk.CTkFont(family="Segoe UI", size=12), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 14))
+
+    # Top Toolbar Card
+    sc_proj_tb = ctk.CTkFrame(p_proj, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+    sc_proj_tb.pack(fill="x", pady=(0, 10), ipady=6)
+
+    row_ptb_top = ctk.CTkFrame(sc_proj_tb, fg_color="transparent")
+    row_ptb_top.pack(fill="x", padx=14, pady=(6, 4))
+
+    lbl_proj_badge = ctk.CTkLabel(row_ptb_top, text="0 Active Projects | 0 Released Products",
+                                  font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, corner_radius=4, padx=8, pady=3)
+    lbl_proj_badge.pack(side="left")
+
+    btn_proj_refresh = ctk.CTkButton(row_ptb_top, text="↻ Refresh Projects", width=130, height=30,
+                                     font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                                     fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER)
+    btn_proj_refresh.pack(side="right")
+
+    row_ptb_batch = ctk.CTkFrame(sc_proj_tb, fg_color="transparent")
+    row_ptb_batch.pack(fill="x", padx=14, pady=(4, 6))
+
+    ctk.CTkButton(row_ptb_batch, text="Max All Active Designs", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.max_all_active_designs(), show_infobar("Maxed all active design documents (100% / Iteration 3)"), refresh_projects_ui())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_ptb_batch, text="Complete All Programming", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.max_all_active_devs(), show_infobar("Completed 100% code & art for all active development projects"), refresh_projects_ui())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_ptb_batch, text="Clear All Project Bugs", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER,
+                  command=lambda: (game.clear_all_projects_bugs(), show_infobar("Cleared all bugs across all active projects"), refresh_projects_ui())).pack(side="left", expand=True, fill="x", padx=2)
+    ctk.CTkButton(row_ptb_batch, text="+50,000 Followers (All)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER,
+                  command=lambda: (game.add_all_projects_followers(50000.0), show_infobar("Added +50,000 followers across all active projects"), refresh_projects_ui())).pack(side="left", expand=True, fill="x", padx=2)
+
+    # --- SECTION 1: ACTIVE PROJECTS IN DEVELOPMENT ---
+    ctk.CTkLabel(p_proj, text="Active Projects in Development", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(8, 2))
+    ctk.CTkLabel(p_proj, text="Manage projects currently advancing through Design, Alpha, and Beta development.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 6))
+
+    frame_proj_list = ctk.CTkFrame(p_proj, fg_color="transparent")
+    frame_proj_list.pack(fill="x", pady=(0, 16))
+
+    # --- SECTION 2: RELEASED SOFTWARE CATALOG ---
+    ctk.CTkLabel(p_proj, text="Released Software Catalog & Commercial Metrics", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=C_TEXT_PRI).pack(anchor="w", pady=(12, 2))
+    ctk.CTkLabel(p_proj, text="Manage quality, market awareness, customer reviews, and post-launch bugs for released software.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_SEC).pack(anchor="w", pady=(0, 6))
+
+    frame_prod_list = ctk.CTkFrame(p_proj, fg_color="transparent")
+    frame_prod_list.pack(fill="x", pady=(0, 16))
+
+    def render_projects_ui():
+        for w in frame_proj_list.winfo_children():
+            w.destroy()
+        for w in frame_prod_list.winfo_children():
+            w.destroy()
+
+        if not game.is_attached():
+            ctk.CTkLabel(frame_proj_list, text="Attach to game to view active projects.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=12)
+            ctk.CTkLabel(frame_prod_list, text="Attach to game to view released products.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=12)
+            return
+
+        projs = game.get_active_projects()
+        prods = game.get_released_products()
+        lbl_proj_badge.configure(text=f"{len(projs)} Active Projects | {len(prods)} Released Products")
+
+        # 1. Render Active Projects
+        if not projs:
+            ctk.CTkLabel(frame_proj_list, text="No active software projects or design documents detected.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=10)
+        else:
+            for p in projs:
+                card = ctk.CTkFrame(frame_proj_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+                card.pack(fill="x", pady=4, ipady=6)
+
+                row_top = ctk.CTkFrame(card, fg_color="transparent")
+                row_top.pack(fill="x", padx=14, pady=(6, 4))
+
+                lbl_pname = ctk.CTkLabel(row_top, text=p["name"], font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), text_color=C_TEXT_PRI)
+                lbl_pname.pack(side="left")
+
+                if p["type"] == "Design":
+                    pill_text = "🎨 Design Phase"
+                    pill_col = C_BTN_SEC
+                    pill_fg = C_ACCENT
+                elif p["in_beta"]:
+                    pill_text = "🐛 Beta (Debugging)"
+                    pill_col = C_BADGE_WEAK
+                    pill_fg = C_ERROR
+                else:
+                    pill_text = "💻 Alpha (Dev)"
+                    pill_col = C_BADGE_GOOD
+                    pill_fg = C_SUCCESS
+
+                ctk.CTkLabel(row_top, text=pill_text, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                             fg_color=pill_col, text_color=pill_fg, corner_radius=4, padx=8, pady=2).pack(side="left", padx=8)
+
+                # Right side badges
+                row_badges = ctk.CTkFrame(row_top, fg_color="transparent")
+                row_badges.pack(side="right")
+
+                if p["type"] != "Design":
+                    bug_col = C_ERROR if p["bugs"] > 0 else C_SUCCESS
+                    ctk.CTkLabel(row_badges, text=f"Bugs: {p['bugs']:.1f}", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                 fg_color=C_BTN_SEC, text_color=bug_col, corner_radius=4, padx=6, pady=2).pack(side="left", padx=4)
+
+                ctk.CTkLabel(row_badges, text=f"👥 {p['followers']:,.0f} Followers", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                             fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, corner_radius=4, padx=6, pady=2).pack(side="left", padx=4)
+
+                # Progress Bars Row
+                row_bars = ctk.CTkFrame(card, fg_color="transparent")
+                row_bars.pack(fill="x", padx=14, pady=(2, 6))
+
+                if p["type"] == "Design":
+                    row_prog_lbl = ctk.CTkFrame(row_bars, fg_color="transparent")
+                    row_prog_lbl.pack(fill="x")
+                    ctk.CTkLabel(row_prog_lbl, text=f"Design Progress: {p['progress']*100:.1f}%  |  Iteration: {p['iteration']}/3  |  Finished: {'Yes' if p['has_finished'] else 'No'}",
+                                 font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC).pack(side="left")
+                    bar_des = ctk.CTkProgressBar(row_bars, height=6, progress_color=C_ACCENT)
+                    bar_des.set(max(0.0, min(1.0, p["progress"])))
+                    bar_des.pack(fill="x", pady=(2, 4))
+                else:
+                    row_prog_lbl = ctk.CTkFrame(row_bars, fg_color="transparent")
+                    row_prog_lbl.pack(fill="x")
+                    ctk.CTkLabel(row_prog_lbl, text=f"Code: {p['code_pct']:.1f}% ({p['tot_code_prog']:.1f}/{p['tot_code_req']:.1f})   |   Art: {p['art_pct']:.1f}% ({p['tot_art_prog']:.1f}/{p['tot_art_req']:.1f})   |   Design Alignment: {p['design_prog']*100:.0f}%",
+                                 font=ctk.CTkFont(family="Segoe UI", size=10), text_color=C_TEXT_SEC).pack(side="left")
+                    bar_code = ctk.CTkProgressBar(row_bars, height=6, progress_color=C_ACCENT)
+                    bar_code.set(max(0.0, min(1.0, p["code_pct"] / 100.0)))
+                    bar_code.pack(fill="x", pady=(2, 4))
+
+                # Actions Row
+                row_act = ctk.CTkFrame(card, fg_color="transparent")
+                row_act.pack(fill="x", padx=14, pady=(4, 6))
+
+                if p["type"] == "Design":
+                    def make_max_design(ptr=p["ptr"], name=p["name"]):
+                        def handler():
+                            game.max_design_project(ptr)
+                            show_infobar(f"Maxed design for '{name}' (Iteration 3, 100% Progress, Finished)")
+                            render_projects_ui()
+                        return handler
+
+                    def make_add_fans(ptr=p["ptr"], cur=p["followers"], name=p["name"], delta=10000.0):
+                        def handler():
+                            game.set_project_followers(ptr, cur + delta)
+                            show_infobar(f"Added +{delta:,.0f} followers to '{name}'")
+                            render_projects_ui()
+                        return handler
+
+                    ctk.CTkButton(row_act, text="Max Design (100% / Iter 3)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=make_max_design()).pack(side="left", expand=True, fill="x", padx=2)
+                    ctk.CTkButton(row_act, text="+10,000 Followers", height=28, font=ctk.CTkFont(family="Segoe UI", size=10),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_add_fans(delta=10000.0)).pack(side="left", expand=True, fill="x", padx=2)
+                    ctk.CTkButton(row_act, text="+50,000 Followers", height=28, font=ctk.CTkFont(family="Segoe UI", size=10),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_add_fans(delta=50000.0)).pack(side="left", expand=True, fill="x", padx=2)
+                else:
+                    def make_max_dev(ptr=p["ptr"], name=p["name"]):
+                        def handler():
+                            game.max_dev_project(ptr)
+                            show_infobar(f"Completed 100% code & art programming for '{name}'")
+                            render_projects_ui()
+                        return handler
+
+                    def make_clear_bugs(ptr=p["ptr"], name=p["name"]):
+                        def handler():
+                            game.clear_project_bugs(ptr)
+                            show_infobar(f"Cleared all bugs (0) for '{name}'")
+                            render_projects_ui()
+                        return handler
+
+                    def make_promote_beta(ptr=p["ptr"], name=p["name"]):
+                        def handler():
+                            game.promote_project_to_beta(ptr)
+                            show_infobar(f"Promoted '{name}' to Beta phase")
+                            render_projects_ui()
+                        return handler
+
+                    def make_ready_release(ptr=p["ptr"], name=p["name"]):
+                        def handler():
+                            game.ready_project_for_release(ptr)
+                            show_infobar(f"'{name}' is now 100% completed, bug-free, and ready for release!")
+                            render_projects_ui()
+                        return handler
+
+                    def make_add_fans_dev(ptr=p["ptr"], cur=p["followers"], name=p["name"], delta=50000.0):
+                        def handler():
+                            game.set_project_followers(ptr, cur + delta)
+                            show_infobar(f"Added +{delta:,.0f} followers to '{name}'")
+                            render_projects_ui()
+                        return handler
+
+                    ctk.CTkButton(row_act, text="Complete Code & Art", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                  fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=make_max_dev()).pack(side="left", expand=True, fill="x", padx=2)
+                    ctk.CTkButton(row_act, text="Clear Bugs (0)", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_clear_bugs()).pack(side="left", expand=True, fill="x", padx=2)
+                    if not p["in_beta"]:
+                        ctk.CTkButton(row_act, text="Promote to Beta", height=28, font=ctk.CTkFont(family="Segoe UI", size=10),
+                                      fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_promote_beta()).pack(side="left", expand=True, fill="x", padx=2)
+                    ctk.CTkButton(row_act, text="Ready for Release", height=28, font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_ready_release()).pack(side="left", expand=True, fill="x", padx=2)
+                    ctk.CTkButton(row_act, text="+50k Followers", height=28, font=ctk.CTkFont(family="Segoe UI", size=10),
+                                  fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_add_fans_dev()).pack(side="left", expand=True, fill="x", padx=2)
+
+                # Custom Follower Override row
+                row_fol = ctk.CTkFrame(card, fg_color="transparent")
+                row_fol.pack(fill="x", padx=14, pady=(2, 6))
+                ctk.CTkLabel(row_fol, text="Exact Followers:", font=ctk.CTkFont(family="Segoe UI", size=9), text_color=C_TEXT_MUTED).pack(side="left", padx=(0, 6))
+                ent_fol = ctk.CTkEntry(row_fol, width=90, height=24, font=ctk.CTkFont(family="Segoe UI", size=10), placeholder_text="Followers")
+                ent_fol.insert(0, f"{p['followers']:.0f}")
+                ent_fol.pack(side="left", padx=(0, 6))
+
+                def make_fol_setter(ptr=p["ptr"], ent=ent_fol, name=p["name"]):
+                    def handler():
+                        try:
+                            val = float(ent.get().replace(",", "").replace(" ", "").strip())
+                            game.set_project_followers(ptr, val)
+                            show_infobar(f"Set followers to {val:,.0f} on '{name}'")
+                            render_projects_ui()
+                        except ValueError:
+                            show_infobar("Enter a valid follower count", is_success=False)
+                    return handler
+
+                ctk.CTkButton(row_fol, text="Apply Followers", width=100, height=24, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_fol_setter()).pack(side="left")
+
+        # 2. Render Released Products
+        if not prods:
+            ctk.CTkLabel(frame_prod_list, text="No released software products detected.", font=ctk.CTkFont(family="Segoe UI", size=11), text_color=C_TEXT_MUTED).pack(pady=10)
+        else:
+            for p in prods:
+                card = ctk.CTkFrame(frame_prod_list, fg_color=C_CARD_BG, corner_radius=8, border_width=1, border_color=C_BORDER)
+                card.pack(fill="x", pady=4, ipady=6)
+
+                row_top = ctk.CTkFrame(card, fg_color="transparent")
+                row_top.pack(fill="x", padx=14, pady=(6, 2))
+
+                lbl_pname = ctk.CTkLabel(row_top, text=p["name"], font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), text_color=C_TEXT_PRI)
+                lbl_pname.pack(side="left")
+
+                # Quality pill
+                q_text = "Outstanding" if p["quality"] >= 1.0 else ("Great" if p["quality"] >= 0.7 else "Normal")
+                q_col = C_SUCCESS if p["quality"] >= 1.0 else C_TEXT_PRI
+                ctk.CTkLabel(row_top, text=f"Quality: {p['quality']:.2f} ({q_text})", font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                             fg_color=C_BTN_SEC, text_color=q_col, corner_radius=4, padx=6, pady=2).pack(side="left", padx=8)
+
+                ctk.CTkLabel(row_top, text=f"${p['price']:.2f}", font=ctk.CTkFont(family="Segoe UI", size=10),
+                             fg_color=C_BTN_SEC, text_color=C_TEXT_SEC, corner_radius=4, padx=6, pady=2).pack(side="left", padx=2)
+
+                ctk.CTkLabel(row_top, text=f"{p['userbase']:,} Active Users", font=ctk.CTkFont(family="Segoe UI", size=10),
+                             fg_color=C_BTN_SEC, text_color=C_TEXT_SEC, corner_radius=4, padx=6, pady=2).pack(side="left", padx=2)
+
+                ctk.CTkLabel(row_top, text=f"👍 +{p['pos_reviews']:,}  👎 -{p['neg_reviews']:,}", font=ctk.CTkFont(family="Segoe UI", size=10),
+                             fg_color=C_BTN_SEC, text_color=C_TEXT_SEC, corner_radius=4, padx=6, pady=2).pack(side="right")
+
+                # Sub info
+                row_sub = ctk.CTkFrame(card, fg_color="transparent")
+                row_sub.pack(fill="x", padx=14, pady=(2, 4))
+                bug_col = C_ERROR if p["bugs"] > 0 else C_SUCCESS
+                ctk.CTkLabel(row_sub, text=f"Market Awareness: {p['awareness']*100:.1f}%   |   Fans: {p['followers']:,}   |   Bugs: {p['bugs']}",
+                             font=ctk.CTkFont(family="Segoe UI", size=10), text_color=bug_col if p["bugs"] > 0 else C_TEXT_SEC).pack(side="left")
+
+                # Actions row
+                row_act = ctk.CTkFrame(card, fg_color="transparent")
+                row_act.pack(fill="x", padx=14, pady=(4, 6))
+
+                def make_prod_clear_bugs(ptr=p["ptr"], name=p["name"]):
+                    def handler():
+                        game.modify_released_product(ptr, clear_bugs=True)
+                        show_infobar(f"Cleared all post-launch bugs for '{name}'")
+                        render_projects_ui()
+                    return handler
+
+                def make_prod_max_aware(ptr=p["ptr"], name=p["name"]):
+                    def handler():
+                        game.modify_released_product(ptr, awareness=1.0)
+                        show_infobar(f"Set 100% market awareness for '{name}'")
+                        render_projects_ui()
+                    return handler
+
+                def make_prod_add_fans(ptr=p["ptr"], cur=p["followers"], name=p["name"], delta=50000):
+                    def handler():
+                        game.modify_released_product(ptr, followers=cur + delta)
+                        show_infobar(f"Added +{delta:,} fans for '{name}'")
+                        render_projects_ui()
+                    return handler
+
+                def make_prod_max_qual(ptr=p["ptr"], name=p["name"]):
+                    def handler():
+                        game.modify_released_product(ptr, quality=1.5)
+                        show_infobar(f"Set Outstanding Quality (1.50) for '{name}'")
+                        render_projects_ui()
+                    return handler
+
+                ctk.CTkButton(row_act, text="Clear Bugs (0)", height=26, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_prod_clear_bugs()).pack(side="left", expand=True, fill="x", padx=2)
+                ctk.CTkButton(row_act, text="Max Awareness (100%)", height=26, font=ctk.CTkFont(family="Segoe UI", size=9),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_prod_max_aware()).pack(side="left", expand=True, fill="x", padx=2)
+                ctk.CTkButton(row_act, text="+50k Fans", height=26, font=ctk.CTkFont(family="Segoe UI", size=9),
+                              fg_color=C_BTN_SEC, text_color=C_TEXT_PRI, hover_color=C_BTN_SEC_HOVER, command=make_prod_add_fans()).pack(side="left", expand=True, fill="x", padx=2)
+                ctk.CTkButton(row_act, text="Outstanding Quality", height=26, font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+                              fg_color=C_ACCENT, text_color=C_ACCENT_TEXT, hover_color=C_ACCENT_HOVER, command=make_prod_max_qual()).pack(side="left", expand=True, fill="x", padx=2)
+
+    def refresh_projects_ui(show_message: bool = False):
+        render_projects_ui()
+        if show_message:
+            show_infobar("Refreshed projects and software catalog from game memory")
+
+    btn_proj_refresh.configure(command=lambda: refresh_projects_ui(show_message=True))
+    page_switch_callbacks["projects"] = lambda: refresh_projects_ui()
+
+    # =========================================================
+    # PAGE 5: WORLD & RULES
     # =========================================================
     p_wrld = pages["world"]
 

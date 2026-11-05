@@ -12,6 +12,28 @@ Engineered with a **native Windows 11 Fluent Design (WinUI 3)** desktop applicat
 * **WinUI 3 Design Language**: Clean SettingsCards, native navigation rail, proper Windows typography (`Segoe UI`), subtle borders, and zero clutter.
 * **Windows InfoBar**: Native status notifications and telemetry pills without invasive popups.
 
+### 📦 Projects & Software Development Suite
+Monitor, accelerate, and manipulate every stage of software product development:
+* **Stage 1: Design Phase (`DesignDocument`)**
+  * Live status pill, Iteration badge (`Iteration 1/3` to `3/3`), and design progress bar (0% - 100%).
+  * **Max Design (100% / Iter 3)**: Instantly completes the design document, sets Iteration 3, 100% lead progress, 100% review accuracy, and marks the project finished and ready for development.
+  * Follower injections during design phase (+10k, +50k, or custom numeric values).
+* **Stage 2: Programming & Art / Alpha (`SoftwareAlpha`)**
+  * Real-time dual progress bars for foundational **Code Progress** and **Art Progress** across all feature sets (`FeatureProgress[]`).
+  * **Complete Code & Art**: Instantly sets 100% development time across all sub-features, marks `CodeDone = 1` and `ArtDone = 1`, and sets 100% review quality.
+  * **Promote to Beta**: Directly transitions the project from Alpha (Dev) into the Beta (Debugging) phase.
+* **Stage 3: Beta & Bug Fixing (`SoftwareAlpha`)**
+  * Live unfixed bugs counter and quality telemetry pill.
+  * **Clear Bugs (0)**: Instantly drops all development bugs to `0.0` while incrementing resolved bug counters.
+  * **Ready for Release**: Single-click preparation that completes all code/art, cleanses all bugs to zero, and marks the project finished for release.
+* **Stage 4: Followers & Fan Base Manipulation**
+  * Set exact project followers or inject instant +10,000 or +50,000 follower boosts to guarantee massive launch day sales.
+  * Works across all active Design, Alpha, and Beta projects simultaneously via batch controls.
+* **Stage 5: Released Software Catalog & Commercial Metrics (`SoftwareProduct`)**
+  * Live catalog of all released products owned by the company.
+  * Telemetry on Product Quality, Unit Retail Price, Active Users, Market Awareness %, Post-launch Bugs, and User Reviews (👍 / 👎).
+  * Quick Actions: **Clear Bugs (0)**, **Max Awareness (100%)**, **Boost Fans (+50k)**, and **Outstanding Quality (1.50+)**.
+
 ### 👤 Deep Personnel & Staff Inspector
 Select any employee or facility staff member in the live roster to open the comprehensive 5-tab inspector:
 * **Zero-Lag Architecture**: Event-driven roster caching with instant in-place card selection. The roster never flickers or resets scroll positions.
@@ -154,6 +176,8 @@ Unlike invasive DLL injection that can destabilize Unity garbage collection or t
 1. **Read-Only Symbol Walk**: Inspects `mono-2.0-bdwgc.dll`'s `loaded_assemblies` linked list and traverses `Assembly-CSharp`'s `MonoInternalHashTable` to locate runtime pointers for `GameSettings`, `Company`, `Cheats`, `TimeOfDay`, `ActorManager`, and `Team`.
 2. **Dynamic Pointer Chaining**:
    * Company at `GameSettings.Instance + 0x128`
+   * WorkItems Set at `Company + 0x108` (`SHashSet<WorkItem>`)
+   * Products List at `Company + 0x110` (`List<SoftwareProduct>`)
    * ActorManager at `GameSettings.Instance + 0x120`
    * Active Actors at `ActorManager + 0x10`
    * Facility Staff at `ActorManager + 0x18`
@@ -191,8 +215,42 @@ Perform quick actions directly from your terminal:
 # View all available CLI options
 python trainer.py --help
 
-# Check live game status, founder, and total personnel
+# Check live game status, founder, total personnel, and active projects
 python trainer.py --status
+
+# List all active design, alpha, and beta projects with live progress
+python trainer.py --list-projects
+
+# List all released software products with commercial metrics
+python trainer.py --list-products
+
+# Complete design phase (100% progress, Iteration 3, finished) for a project or all projects
+python trainer.py --max-design "InkCut Pro"
+python trainer.py --max-design all
+
+# Complete 100% programming & art dev across all features
+python trainer.py --max-dev "PrintEdit"
+python trainer.py --max-dev all
+
+# Clear all development bugs (0) on active project(s)
+python trainer.py --clear-bugs "PhotoCanvas"
+python trainer.py --clear-bugs all
+
+# Directly promote active alpha project(s) to Beta phase
+python trainer.py --promote-beta "PhotoCanvas"
+
+# Prepare project for release (completes code/art, clears bugs, marks finished)
+python trainer.py --ready-release "PrintEdit"
+
+# Set exact followers on a project
+python trainer.py --set-proj-fans "PhotoCanvas" 50000
+
+# Add followers across all active projects
+python trainer.py --add-proj-fans 25000
+
+# Maximize quality (1.50), set 100% market awareness, and clear bugs on released product
+python trainer.py --max-product "2Dimp"
+python trainer.py --max-product all
 
 # List all teams, employees, facility staff, salaries, and weaknesses
 python trainer.py --list-teams
