@@ -326,11 +326,58 @@ python trainer.py --speed 5.0
 
 ---
 
+## 🚀 Quickstart & Launch Options
+
+### Option B: Modern PySide6 & WinUI 3 Fluent Design Suite (Recommended)
+Hardware-accelerated WinUI 3 interface with Mica/Acrylic depth effects, non-blocking background telemetry worker (`QThread`), virtualized data tables, and slide-out deep inspector drawer.
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Launch Modern Desktop Suite
+python main.py
+```
+
+### Legacy Reference & Headless CLI
+```bash
+# Launch original monolithic script
+python trainer.py
+
+# Run headless CLI commands
+python main.py --help
+# or
+python trainer.py --help
+```
+
+---
+
 ## 📁 Repository Structure
 
 ```
-software-inc/
-├── .gitignore                     # Git ignore rules
-├── README.md                      # Trainer documentation & guide
-└── trainer.py                     # Windows 11 Fluent GUI & CLI Trainer
+software-inc-trainer/
+├── core/
+│   ├── constants.py               # 33 traits, role specializations, hotkeys, and financial presets
+│   ├── memory.py                  # High-speed external memory engine & Unity Mono x64 traversal
+│   ├── worker.py                  # Non-blocking QThread telemetry & global hotkeys monitor
+│   └── cli.py                     # Headless command-line interface & automation engine
+├── ui/
+│   ├── components/
+│   │   ├── header_ribbon.py       # Global persistent HUD with live PID, calendar, quick cheats, and KPIs
+│   │   ├── stat_card.py           # Windows 11 elevated metric card
+│   │   ├── vitals_gauge.py        # Visual gauge with dynamic color thresholds (Green/Amber/Red)
+│   │   ├── star_rating.py         # Compact 0-3 star rating control for 25 role subfields
+│   │   └── trait_chip.py          # Tag-cloud chip distinguishing perks from weaknesses
+│   ├── views/
+│   │   ├── dashboard_view.py      # Executive overview: Treasury, solvency, VIP founder, market standing
+│   │   ├── talent_view.py         # Unified Talent HQ: Virtualized employee roster & slide-out inspector
+│   │   ├── projects_view.py       # Visual software pipeline: Design, Alpha (Code/Art), Beta, Released
+│   │   ├── innovation_view.py     # Laboratory R&D acceleration & 2099 patent royalty monopolies
+│   │   ├── sandbox_view.py        # World rules, furniture catalog unlock, shaders, and time dilation
+│   │   └── hotkeys_view.py        # Global shortcuts reference & live audit event log
+│   └── window.py                  # MSFluentWindow hosting navigation interface and Mica background
+├── main.py                        # Clean entry point with High-DPI scaling & CLI fallback
+├── requirements.txt               # PySide6 and PySide6-Fluent-Widgets dependencies
+├── trainer.py                     # Original standalone reference script preserved intact
+└── README.md                      # Comprehensive documentation
 ```
