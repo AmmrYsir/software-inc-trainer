@@ -491,7 +491,7 @@ class TalentView(QWidget):
 
         for row, e in enumerate(self._filtered_employees):
             name = e.get("name", "Unknown")
-            is_founder = e.get("is_founder", False)
+            is_founder = e.get("is_founder", False) or e.get("founder", False)
             if is_founder:
                 name = f"👑 {name} (Founder)"
 
@@ -503,7 +503,7 @@ class TalentView(QWidget):
             energy = f"{int(vitals.get('energy', 1.0) * 100)}%"
             stress = f"{int(vitals.get('stress', 0.0) * 100)}%"
 
-            traits_count = len(e.get("traits", []))
+            traits_count = len(e.get("traits", []) or (e.get("goods", []) + e.get("weaknesses", [])))
 
             self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem(role))
@@ -540,7 +540,7 @@ class TalentView(QWidget):
         self.detail_card.setVisible(True)
 
         name = emp.get("name", "Unknown")
-        is_founder = emp.get("is_founder", False)
+        is_founder = emp.get("is_founder", False) or emp.get("founder", False)
         role = emp.get("role", "Lead")
 
         if is_founder:
@@ -580,7 +580,10 @@ class TalentView(QWidget):
         self.stress_gauge.set_value(stress_val)
 
         # 2. Update Skills
-        skills = emp.get("skills", {})
+        skills = emp.get("skills_dict") or emp.get("skills", {})
+        if isinstance(skills, list):
+            skills = {ROLE_NAMES[i]: skills[i] for i in range(min(len(skills), len(ROLE_NAMES)))}
+
         for r in ROLE_NAMES:
             s_val = int(skills.get(r, 1.0) * 100)
             if r in self.skill_sliders:
@@ -590,7 +593,7 @@ class TalentView(QWidget):
                 self.skill_sliders[r].blockSignals(False)
 
         # 3. Update Specs Star Ratings
-        specs = emp.get("specializations", {})
+        specs = emp.get("specializations") or emp.get("specs", {})
         for role, subfields in ROLE_ALL_SPECIALIZATIONS.items():
             role_specs = specs.get(role, {})
             for subfield in subfields:
@@ -600,7 +603,7 @@ class TalentView(QWidget):
                     self.star_widgets[key].set_level(lvl)
 
         # 4. Update Traits
-        current_traits = set(emp.get("traits", []))
+        current_traits = set(emp.get("traits", []) or (emp.get("goods", []) + emp.get("weaknesses", [])))
         for name, chip in self.trait_chips.items():
             chip.blockSignals(True)
             chip.set_active(name in current_traits)
@@ -708,13 +711,15 @@ class TalentView(QWidget):
         if not self._selected_emp or not self.game.is_attached():
             return
         ptr = self._selected_emp["ptr"]
-        self.game.set_employee_skill(ptr, role, val / 100.0)
+        role_idx = ROLE_NAMES.index(role) if role in ROLE_NAMES else role
+        self.game.set_employee_skill(ptr, role_idx, val / 100.0)
 
     def _on_spec_star_changed(self, role: str, subfield: str, level: int):
         if not self._selected_emp or not self.game.is_attached():
             return
         ptr = self._selected_emp["ptr"]
-        self.game.set_employee_spec_level(ptr, role, subfield, level)
+        role_idx = ROLE_NAMES.index(role) if role in ROLE_NAMES else role
+        self.game.set_employee_spec_level(ptr, role_idx, subfield, level)
         self.worker.log("INFO", f"Set {role} - {subfield} to {level}★ for '{self._selected_emp.get('name')}'")
 
     def _on_trait_toggled(self, trait_name: str, active: bool):

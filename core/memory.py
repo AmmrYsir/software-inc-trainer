@@ -621,6 +621,10 @@ class GameMemory:
                     else:
                         goods.append(tname)
 
+            skills_dict = {}
+            for r_i, r_name in enumerate(self.ROLE_NAMES):
+                skills_dict[r_name] = skills[r_i] if r_i < len(skills) else 1.0
+
             employees.append({
                 "index": idx,
                 "actor_ptr": actor_ptr,
@@ -628,6 +632,7 @@ class GameMemory:
                 "ptr": emp_ptr,
                 "name": name,
                 "founder": founder,
+                "is_founder": founder,
                 "ceo": ceo,
                 "role": "Founder" if founder else "Staff",
                 "team": team_name,
@@ -651,14 +656,17 @@ class GameMemory:
                     "skill_ceiling": skill_ceiling,
                 },
                 "skills": skills,
+                "skills_dict": skills_dict,
                 "spec_exp": spec_exp,
                 "spec_used": spec_used,
                 "total_points": int(sum(spec_exp)),
                 "total_used": int(sum(spec_used)),
                 "specs": specs_by_role,
+                "specializations": specs_by_role,
                 "traits_mask": traits_mask,
                 "goods": goods,
                 "weaknesses": weaknesses,
+                "traits": goods + weaknesses,
             })
             idx += 1
 
@@ -704,7 +712,12 @@ class GameMemory:
         self.write_float(emp_ptr + 0x118, 1.0)  # SkillCeiling = 100%
         return True
 
-    def set_employee_skill(self, emp_ptr: int, role_idx: int, value: float) -> bool:
+    def set_employee_skill(self, emp_ptr: int, role_idx: Any, value: float) -> bool:
+        if isinstance(role_idx, str):
+            if role_idx in self.ROLE_NAMES:
+                role_idx = self.ROLE_NAMES.index(role_idx)
+            else:
+                return False
         if not emp_ptr or role_idx < 0 or role_idx >= 5:
             return False
         skills_arr = self.read_ptr(emp_ptr + 0xA8)
@@ -816,7 +829,12 @@ class GameMemory:
                 break
         return len(self._spec_metadata) > 0
 
-    def set_employee_spec_level(self, emp_ptr: int, role_idx: int, spec_key: str, target_level: int) -> bool:
+    def set_employee_spec_level(self, emp_ptr: int, role_idx: Any, spec_key: str, target_level: int) -> bool:
+        if isinstance(role_idx, str):
+            if role_idx in self.ROLE_NAMES:
+                role_idx = self.ROLE_NAMES.index(role_idx)
+            else:
+                return False
         if not emp_ptr or role_idx < 0 or role_idx >= 5 or not self.handle:
             return False
         if not self._ensure_spec_metadata():
