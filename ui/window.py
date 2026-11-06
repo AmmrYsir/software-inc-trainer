@@ -99,7 +99,7 @@ class MainWindow(MSFluentWindow):
             self.hotkeys_view,
             FIF.COMMAND_PROMPT,
             "Shortcuts & Logs",
-            NavigationItemPosition.BOTTOM,
+            position=NavigationItemPosition.BOTTOM,
         )
 
     def _wire_signals(self):
