@@ -1092,8 +1092,20 @@ class GameMemory:
     def max_design_project(self, ptr: int) -> bool:
         if not ptr:
             return False
+        # DesignDocument.RawProgress() = sum(feature.Progress) / sum(feature.DevTime),
+        # so every feature in the document must be completed, not just the document fields.
+        features_ptr = self.read_ptr(ptr + 0x118)
+        feat_count = self.read_u32(features_ptr + 0x18) if features_ptr else 0
+        for f_idx in range(min(feat_count, 512)):
+            fp = self.read_ptr(features_ptr + 0x20 + f_idx * 8)
+            if not fp:
+                continue
+            dev_time = self.read_double(fp + 0x18)
+            self.write_double(fp + 0x30, dev_time)   # Progress = DevTime (100%)
+            self.write_float(fp + 0x64, 1.0)         # LastIterationProg
         self.write_u32(ptr + 0x22C, 3)        # Iteration 3
         self.write_float(ptr + 0x23C, 1.0)     # _currentProgress = 100%
+        self.write_float(ptr + 0x234, 1.0)     # LastProgress
         self.write_float(ptr + 0x238, 1.0)     # LeadProgress = 100%
         self.write_float(ptr + 0x230, 1.0)     # ReviewAccuracy = 100%
         self.write_u8(ptr + 0x228, 1)          # HasFinished = True
