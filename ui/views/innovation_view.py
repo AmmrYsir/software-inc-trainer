@@ -248,7 +248,7 @@ class InnovationView(QScrollArea):
         if not self.game.is_attached():
             self._show_warn("Game not attached.")
             return
-        cnt = self.game.boost_all_active_research(multiplier=10.0)
+        cnt = self.game.boost_all_active_research(factor=10.0)
         self.worker.log("SUCCESS", f"Boosted research speed to 10.0x for {cnt} active laboratory tasks!")
         self._show_success(f"Boosted speed to 10.0x for {cnt} tasks!")
         self.worker.request_immediate_refresh()

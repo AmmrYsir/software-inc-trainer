@@ -148,6 +148,9 @@ class TelemetryWorker(QThread):
                     if freeze:
                         self.game.max_all_employees_needs()
 
+                    # Persistent research accelerator (adds extra progress each tick)
+                    self.game.apply_research_boost()
+
                     # Collect high-frequency telemetry
                     money = self.game.get_money()
                     fans = self.game.get_fans()

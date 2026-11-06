@@ -116,6 +116,12 @@ class GameMemory:
         self.actor_manager = 0
         self.time_of_day_instance = 0
 
+        # Research accelerator state (ResearchWork.UpgFactor is NOT used by the game's
+        # DoWork, so speed-ups are applied by adding extra progress every tick instead)
+        self.research_boost_default = 1.0
+        self._research_boost = {}      # work item ptr -> multiplier
+        self._research_last = {}       # work item ptr -> last seen progress
+
         # Specialization insertion cache
         self._spec_metadata = {}
         self._v_buckets = 0
@@ -1325,7 +1331,7 @@ class GameMemory:
                     "progress": progress,
                     "max": max_val,
                     "pct": pct,
-                    "upg_factor": upg_factor,
+                    "upg_factor": self.get_research_speed(item_ptr),
                     "finished": finished,
                     "done": done,
                     "paused": paused,
@@ -1333,19 +1339,66 @@ class GameMemory:
                 })
         return tasks
 
+    # Stop just short of Max: ResearchWork.DoWork() only runs its completion path
+    # (Finished = true + GUIWorkItem.InitButtons, which creates the "Finish" button that
+    # calls FinishNow -> Company.AddResearch / patent prompt / Kill) when it takes progress
+    # from below Max up to Max itself. Writing Max + Finished directly leaves the task stuck
+    # at 100% with no button, so we leave the last tiny step to the game.
+    RESEARCH_EPSILON = 0.0005
+
     def max_research_task(self, ptr: int) -> bool:
         if not ptr:
             return False
         max_val = self.read_u32(ptr + 0x0BC)
-        target_pts = float(max_val) if max_val > 0 else 48.0
+        target_pts = (float(max_val) if max_val > 0 else 48.0) - self.RESEARCH_EPSILON
+        self.write_u8(ptr + 0x0C8, 0)  # un-stick tasks previously forced to Finished
         self.write_float(ptr + 0x0B8, target_pts)
-        self.write_u8(ptr + 0x0C8, 1)  # Finished = True
+        self._research_last[ptr] = target_pts
         return True
 
     def set_research_speed(self, ptr: int, factor: float = 10.0) -> bool:
+        """Enable a persistent speed multiplier on one research task (applied by apply_research_boost)."""
         if not ptr:
             return False
-        return self.write_float(ptr + 0x0C0, max(0.1, float(factor)))
+        factor = max(1.0, float(factor))
+        self._research_boost[ptr] = factor
+        self._research_last[ptr] = self.read_float(ptr + 0x0B8)
+        self.write_float(ptr + 0x0C0, factor)  # cosmetic mirror of UpgFactor
+        return True
+
+    def get_research_speed(self, ptr: int) -> float:
+        return self._research_boost.get(ptr, self.research_boost_default)
+
+    def apply_research_boost(self) -> int:
+        """Call periodically. Adds (factor - 1) x the progress the game just made, per research task."""
+        if not self.company or not self.is_attached():
+            return 0
+        if not self._research_boost and self.research_boost_default <= 1.0:
+            return 0
+        boosted = 0
+        live = set()
+        for t in self.get_active_research():
+            ptr = t["ptr"]
+            live.add(ptr)
+            factor = self.get_research_speed(ptr)
+            cur = t["progress"]
+            max_val = float(t["max"])
+            last = self._research_last.get(ptr, cur)
+            self._research_last[ptr] = cur
+            if factor <= 1.0 or t["finished"] or max_val <= 0:
+                continue
+            delta = cur - last
+            if delta <= 0:
+                continue
+            new_prog = min(max_val - self.RESEARCH_EPSILON, cur + delta * (factor - 1.0))
+            if new_prog > cur and self.write_float(ptr + 0x0B8, new_prog):
+                self._research_last[ptr] = new_prog
+                boosted += 1
+        for ptr in list(self._research_last):
+            if ptr not in live:
+                self._research_last.pop(ptr, None)
+                self._research_boost.pop(ptr, None)
+        return boosted
 
     def set_research_progress(self, ptr: int, progress: float) -> bool:
         if not ptr:
@@ -1360,7 +1413,10 @@ class GameMemory:
                 cnt += 1
         return cnt
 
-    def boost_all_active_research(self, factor: float = 10.0) -> int:
+    def boost_all_active_research(self, factor: float = 10.0, multiplier: float = None) -> int:
+        if multiplier is not None:
+            factor = multiplier
+        self.research_boost_default = max(1.0, float(factor))
         tasks = self.get_active_research()
         cnt = 0
         for t in tasks:
